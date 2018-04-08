@@ -26,7 +26,7 @@ SORT_KEY=$FIELD_TITLE
 FILTER_TAGS=''
 FILTER_DESC='.'
 FILTER_TITLE='.'
-FILTER_WORDCOUNT=''
+FILTER_WORDCOUNT='>0'
 
 # Misc
 QUIET=''
@@ -98,6 +98,7 @@ show_index_view() {
         -f tagfilter.awk "$CACHEFILE" \
         | sed -n 'h; s/^\([^\t]*\t\)\{3\}\([^\t]*\)\t.*/\2/g ; /'"$FILTER_TITLE"'/I !d ; g ; p' \
         | sed -n 'h; s/^\([^\t]*\t\)\{4\}\([^\t]*\)\t.*/\2/g ; /'"$FILTER_DESC"'/I !d ; g ; p' \
+        | awk -F"$SEP" '{if ($'"$FIELD_WORDCOUNT"' '"$FILTER_WORDCOUNT"') {print $0}}' \
         | sort -h -t"$SEP" -k"$SORT_KEY" \
         | awk -F"$SEP" -v full_hr="$hr" -v termwidth="$TERMWIDTH" -v color_mode="$COLORMODE" \
             -f formatoutput.awk
@@ -167,6 +168,14 @@ while test "$1"; do
             case "$FILTER_KEY" in
                 d ) FILTER_DESC="$FILTER_ARG" ;;
                 n ) FILTER_TITLE="$FILTER_ARG" ;;
+                c )
+                    if $(printf '%s\n' "$FILTER_ARG" | grep -qE '^([<>]=?|==) *[0-9]+$') ; then
+                        FILTER_WORDCOUNT="$FILTER_ARG"
+                    else
+                        printf 'error: invalid wordcount filter: "%s"\n' "$FILTER_ARG"
+                        exit 1
+                    fi
+                    ;;
                 * )
                     printf 'error: invalid filter key: "%s"\n' "$ARG"
                     exit 1
