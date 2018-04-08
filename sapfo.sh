@@ -43,6 +43,7 @@ fix_tag_colors() {
         if test -z "$RGB" ; then
             REPL=""
         else
+            # Specifically don't quote $RGB because that is supposed to be three args
             REPL="$(printf "%d;%d;%d\n" $RGB)"
         fi
         printf '%s\n' "$line" | sed -E 's/"#.{6}"/"'"$REPL"'"/' >> "$CACHEDCOLORS"
@@ -51,8 +52,9 @@ fix_tag_colors() {
 }
 
 generate_cache() {
+    # TODO: fix this more
     fix_tag_colors
-    ALL_FILES="$(for f in $(find "$ROOT" -type f -name '*.metadata' | sort) ; do printf '%s\t%s\t%s\n' "$f" $(stat -c '%Y' "$f") $(stat -c '%Y' "$(dirname "$f")/$(basename "$f" | sed "$DEXT")") ; done)"
+    ALL_FILES="$(find "$ROOT" -type f -name '*.metadata' | sort | while read f; do printf '%s\t%s\t%s\n' "$f" $(stat -c '%Y' "$f") $(stat -c '%Y' "$(dirname "$f")/$(basename "$f" | sed "$DEXT")") ; done)"
     CACHED_FILES="$(cut -f1-3 metadata.json)"
     printf '%s' "$ALL_FILES" > allfiles
     printf '%s' "$CACHED_FILES" > cachedfiles
@@ -82,10 +84,10 @@ index_metadata_file() {
             $length
         ] | join("\t")
         ' \
-        --arg metafile $METAFNAME \
-        --arg length $WORDS \
-        --arg meta_last_modified $METAMODIFYDATE \
-        --arg last_modified $MODIFYDATE \
+        --arg metafile "$METAFNAME" \
+        --arg length "$WORDS" \
+        --arg meta_last_modified "$METAMODIFYDATE" \
+        --arg last_modified "$MODIFYDATE" \
         "$METAFNAME" >> "$CACHEFILE"
 }
 
@@ -96,7 +98,7 @@ show_index_view() {
         -f tagfilter.awk "$CACHEFILE" \
         | sed -n 'h; s/^\([^\t]*\t\)\{3\}\([^\t]*\)\t.*/\2/g ; /'"$FILTER_TITLE"'/I !d ; g ; p' \
         | sed -n 'h; s/^\([^\t]*\t\)\{4\}\([^\t]*\)\t.*/\2/g ; /'"$FILTER_DESC"'/I !d ; g ; p' \
-        | sort -h -t"$SEP" -k$SORT_KEY \
+        | sort -h -t"$SEP" -k"$SORT_KEY" \
         | awk -F"$SEP" -v full_hr="$hr" -v termwidth="$TERMWIDTH" -v color_mode="$COLORMODE" \
             -f formatoutput.awk
 }
@@ -113,7 +115,8 @@ while test "$1"; do
         -r | --reload )
             fix_tag_colors
             printf '' > "$CACHEFILE"
-            for f in $(find "$ROOT" -type f -name '*.metadata' | sort) ; do
+            find "$ROOT" -type f -name '*.metadata' | sort \
+                | while read f ; do
                 index_metadata_file "$f"
             done
             QUIET='yes'
@@ -124,7 +127,7 @@ while test "$1"; do
             ;;
         -lt )
             printf '[1m  Tags:[0m\n'
-            cut -d"$SEP" -f$FIELD_TAGS "$CACHEFILE" | grep '.' | tr ',' '\n' \
+            cut -d"$SEP" -f"$FIELD_TAGS" "$CACHEFILE" | grep '.' | tr ',' '\n' \
                 | sort | uniq -c | sort -nr | column
             #cut -d"$SEP" -f$FIELD_TAGS,$FIELD_TAG_COLORS "$CACHEFILE" | grep '.' \
                 #| awk -F"$SEP" '{split($1,t,",");split($2,c,",");for(x in t){print c[x] "\t" t[x]}}'\
@@ -135,10 +138,10 @@ while test "$1"; do
         -s? )
             ARG="${1#-s}"
             case "$ARG" in
-                d ) SORT_KEY=$FIELD_DESC ;;
-                n ) SORT_KEY=$FIELD_TITLE ;;
-                c ) SORT_KEY=$FIELD_WORDCOUNT ;;
-                m ) SORT_KEY=$FIELD_LAST_MODIFIED ;;
+                d ) SORT_KEY="$FIELD_DESC" ;;
+                n ) SORT_KEY="$FIELD_TITLE" ;;
+                c ) SORT_KEY="$FIELD_WORDCOUNT" ;;
+                m ) SORT_KEY="$FIELD_LAST_MODIFIED" ;;
                 * )
                     printf 'error: invalid sort key: "%s"\n' "$ARG"
                     exit 1
