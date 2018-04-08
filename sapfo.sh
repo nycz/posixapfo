@@ -6,7 +6,9 @@ ROOT="$(jq -r '.["path"]' "$SETTINGSFILE")"
 COLORMODE="$(jq -r '.["color mode"]//"color"' "$SETTINGSFILE")"
 TAGCOLORFILE="tagcolors.json"
 
+# TODO: better names, better places
 CACHEFILE=metadata.json
+STATEFILE=sapfo.state
 CACHEDCOLORS=fixedtagcolors.json
 
 
@@ -31,6 +33,7 @@ FILTER_WORDCOUNT='>0'
 # Misc
 QUIET=''
 SEP='	'  # tab character, since bash and its ilk dont like \t
+REGEN_INDEX=''
 
 
 fix_tag_colors() {
@@ -91,17 +94,20 @@ index_metadata_file() {
         "$METAFNAME" >> "$CACHEFILE"
 }
 
-show_index_view() {
-    TERMWIDTH="$(tput cols)"
-    hr="$(printf "%${TERMWIDTH}s" | sed 's/ /─/g')"
+generate_index_view() {
     awk -F"$SEP" -v tag_filter=""$(printf "%s\n" "$FILTER_TAGS" | sed -E 's/ *([(),|]) */\1/g')"" \
         -f tagfilter.awk "$CACHEFILE" \
         | sed -n 'h; s/^\([^\t]*\t\)\{3\}\([^\t]*\)\t.*/\2/g ; /'"$FILTER_TITLE"'/I !d ; g ; p' \
         | sed -n 'h; s/^\([^\t]*\t\)\{4\}\([^\t]*\)\t.*/\2/g ; /'"$FILTER_DESC"'/I !d ; g ; p' \
         | awk -F"$SEP" '{if ($'"$FIELD_WORDCOUNT"' '"$FILTER_WORDCOUNT"') {print $0}}' \
-        | sort -h -t"$SEP" -k"$SORT_KEY" \
-        | awk -F"$SEP" -v full_hr="$hr" -v termwidth="$TERMWIDTH" -v color_mode="$COLORMODE" \
-            -f formatoutput.awk
+        | sort -h -t"$SEP" -k"$SORT_KEY" > "$STATEFILE"
+}
+
+show_index_view() {
+    TERMWIDTH="$(tput cols)"
+    hr="$(printf "%${TERMWIDTH}s" | sed 's/ /─/g')"
+    awk -F"$SEP" -v full_hr="$hr" -v termwidth="$TERMWIDTH" -v color_mode="$COLORMODE" \
+            -f formatoutput.awk "$STATEFILE"
 }
 
 
@@ -148,14 +154,7 @@ while test "$1"; do
                     exit 1
                     ;;
             esac
-            ;;
-        -ft )
-            shift
-            if test -z "$1" ; then
-                printf 'error: no tag filter specified\n'
-                exit 1
-            fi
-            FILTER_TAGS="$1"
+            REGEN_INDEX='yes'
             ;;
         -f? )
             FILTER_KEY="${1#-f}"
@@ -166,6 +165,7 @@ while test "$1"; do
             fi
             FILTER_ARG="$1"
             case "$FILTER_KEY" in
+                t ) FILTER_TAGS="$FILTER_ARG" ;;
                 d ) FILTER_DESC="$FILTER_ARG" ;;
                 n ) FILTER_TITLE="$FILTER_ARG" ;;
                 c )
@@ -181,6 +181,27 @@ while test "$1"; do
                     exit 1
                     ;;
             esac
+            REGEN_INDEX='yes'
+            ;;
+        -e[0-9]* )
+            if test -z "$EDITOR" ; then
+                printf 'error: no $EDITOR specified\n'
+                exit 1
+            fi
+            ENTRY_NUM="${1#-e}"
+            if ! $(printf '%s\n' "$ENTRY_NUM" | grep -qE '^[0-9]$'); then
+                printf 'error: entry index is not a number: "%s"\n' "$ENTRY_NUM"
+                exit 1
+            fi
+            ENTRY_NUM="$(($ENTRY_NUM + 1))"
+            ENTRY="$(sed -n "$ENTRY_NUM p" "$STATEFILE")"
+            if test -z "$ENTRY" ; then
+                printf 'error: invalid entry index: "%d"\n' "$(($ENTRY_NUM - 1))"
+                exit 1
+            fi
+            ENTRY_FNAME="$(printf '%s\n' "$ENTRY" | cut -d"$SEP" -f1)"
+            "$EDITOR" "$ENTRY_FNAME"
+            QUIET='yes'
             ;;
         * )
             printf 'error: invalid argument: "%s"\n' "$1"
@@ -190,5 +211,7 @@ while test "$1"; do
     shift
 done
 
-
-test -z "$QUIET" && show_index_view
+if test -z "$QUIET" ; then
+    test -n "$REGEN_INDEX" && generate_index_view
+    show_index_view
+fi
