@@ -1,15 +1,17 @@
 #!/bin/sh
 
 # Input files
-SETTINGSFILE="$HOME/.config/sapfo/settings.json"
-ROOT="$(jq -r '.["path"]' "$SETTINGSFILE")"
-COLORMODE="$(jq -r '.["color mode"]//"color"' "$SETTINGSFILE")"
-TAGCOLORFILE="tagcolors.json"
+SETTINGS_FILE="$HOME/.config/sapfo/settings.json"
+ROOT="$(jq -r '.["path"]' "$SETTINGS_FILE")"
+COLORMODE="$(jq -r '.["color mode"]//"color"' "$SETTINGS_FILE")"
 
 # TODO: better names, better places
-CACHEFILE=metadata.json
-STATEFILE=sapfo.state
-CACHEDCOLORS=fixedtagcolors.json
+CACHEDIR="$HOME/.cache/sapfo"
+test -e "$CACHEDIR" || mkdir -p "$CACHEDIR"
+STATE_FILE="$CACHEDIR/state"
+ENTRIES_FILE="$CACHEDIR/entries"
+VISIBLE_ENTRIES_FILE="$CACHEDIR/visible_entries"
+TAG_COLORS_FILE="$CACHEDIR/fixedtagcolors.json"
 
 
 # Fields
@@ -22,24 +24,52 @@ FIELD_TAGS=6
 FIELD_TAG_COLORS=7
 FIELD_WORDCOUNT=8
 
-SORT_KEY=$FIELD_TITLE
+# Default state
+DEF_TITLE_FILTER='.'
+DEF_DESC_FILTER='.'
+DEF_TAG_FILTER=''
+DEF_WORDCOUNT_FILTER='>0'
+DEF_SORT_KEY="$FIELD_TITLE"
+DEF_SORT_ORDER="ascending"
+test -f "$STATE_FILE" \
+    || printf '%s=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n' \
+        'title_filter' "$DEF_TITLE_FILTER" \
+        'desc_filter' "$DEF_DESC_FILTER" \
+        'tag_filter' "$DEF_TAG_FILTER" \
+        'wordcount_filter' "$DEF_WORDCOUNT_FILTER" \
+        'sort_key' "$DEF_SORT_KEY" \
+        'sort_order' "$DEF_SORT_ORDER" \
+        > "$STATE_FILE"
 
 # Filters
-FILTER_TAGS=''
-FILTER_DESC='.'
-FILTER_TITLE='.'
-FILTER_WORDCOUNT='>0'
+get_state_value() {
+    # $1 = key, $2 = default value
+    VAL="$(sed -n '/^'"$1"'=/ s/^[^=]\+=\(.*\)$/\1/ p' "$STATE_FILE")"
+    test -z "$VAL" && VAL="$2"
+    printf '%s\n' "$VAL"
+}
+set_state_value() {
+    # Remove any old matching line and add the new line
+    sed -i '/^'"$1"'=/d ; $a '"$1"'='"$2" "$STATE_FILE"
+    #sed -i '/^'"$1"'=/d ; s/^\('"$1"'=\).*$/\1'"$2"'/' "$STATE_FILE"
+}
+FILTER_TITLE="$(get_state_value 'title_filter' "$DEF_TITLE_FILTER")"
+FILTER_DESC="$(get_state_value 'desc_filter' "$DEF_DESC_FILTER")"
+FILTER_TAGS="$(get_state_value 'tag_filter' "$DEF_TAG_FILTER")"
+FILTER_WORDCOUNT="$(get_state_value 'wordcount_filter' "$DEF_WORDCOUNT_FILTER")"
+SORT_KEY="$(get_state_value 'sort_key' "$DEF_SORT_KEY")"
+SORT_ORDER="$(get_state_value 'sort_order' "$DEF_SORT_ORDER")"
 
 # Misc
-QUIET=''
 SEP='	'  # tab character, since bash and its ilk dont like \t
-REGEN_INDEX=''
+QUIET=''
+REGEN_ENTRIES=''
 
 
 fix_tag_colors() {
-    printf '' > "$CACHEDCOLORS"
+    printf '' > "$TAG_COLORS_FILE"
     #jq -r 'to_entries | map("\(.key)\t\(.value)") | join("\n")' tagcolors.json \
-    jq '.["tag colors"]' "$SETTINGSFILE" \
+    jq '.["tag colors"]' "$SETTINGS_FILE" \
       | sed -E 's/"#(.)(.)(.)"/"#\1\1\2\2\3\3"/' \
       | while read line ; do
         RGB=$(printf '%s\n' "$line" | sed -En 's/^.*": *"#(..)(..)(..)".*$/0x\1 0x\2 0x\3/p' )
@@ -49,7 +79,7 @@ fix_tag_colors() {
             # Specifically don't quote $RGB because that is supposed to be three args
             REPL="$(printf "%d;%d;%d\n" $RGB)"
         fi
-        printf '%s\n' "$line" | sed -E 's/"#.{6}"/"'"$REPL"'"/' >> "$CACHEDCOLORS"
+        printf '%s\n' "$line" | sed -E 's/"#.{6}"/"'"$REPL"'"/' >> "$TAG_COLORS_FILE"
             #| sed -E -e 's/^(.+)\t(.+)$/"\1": "\2",/g'
     done
 }
@@ -74,7 +104,7 @@ index_metadata_file() {
     WORDS="$(wc -w "$FNAME" | cut -d' ' -f1)"
     METAMODIFYDATE="$(stat -c '%Y' "$METAFNAME")"
     MODIFYDATE="$(stat -c '%Y' "$FNAME")"
-    jq -rc --slurpfile tag_colors "$CACHEDCOLORS" --arg default_tag_color '102;102;119' '
+    jq -rc --slurpfile tag_colors "$TAG_COLORS_FILE" --arg default_tag_color '102;102;119' '
         [
             $metafile,
             $meta_last_modified,
@@ -91,23 +121,24 @@ index_metadata_file() {
         --arg length "$WORDS" \
         --arg meta_last_modified "$METAMODIFYDATE" \
         --arg last_modified "$MODIFYDATE" \
-        "$METAFNAME" >> "$CACHEFILE"
+        "$METAFNAME" >> "$ENTRIES_FILE"
 }
 
 generate_index_view() {
+    test "$SORT_ORDER" = 'descending' && REVERSE_ARG='-r' || REVERSE_ARG=''
     awk -F"$SEP" -v tag_filter=""$(printf "%s\n" "$FILTER_TAGS" | sed -E 's/ *([(),|]) */\1/g')"" \
-        -f tagfilter.awk "$CACHEFILE" \
+        -f tagfilter.awk "$ENTRIES_FILE" \
         | sed -n 'h; s/^\([^\t]*\t\)\{3\}\([^\t]*\)\t.*/\2/g ; /'"$FILTER_TITLE"'/I !d ; g ; p' \
         | sed -n 'h; s/^\([^\t]*\t\)\{4\}\([^\t]*\)\t.*/\2/g ; /'"$FILTER_DESC"'/I !d ; g ; p' \
         | awk -F"$SEP" '{if ($'"$FIELD_WORDCOUNT"' '"$FILTER_WORDCOUNT"') {print $0}}' \
-        | sort -h -t"$SEP" -k"$SORT_KEY" > "$STATEFILE"
+        | sort -h -t"$SEP" -k"$SORT_KEY" $REVERSE_ARG > "$VISIBLE_ENTRIES_FILE"
 }
 
 show_index_view() {
     TERMWIDTH="$(tput cols)"
     hr="$(printf "%${TERMWIDTH}s" | sed 's/ /─/g')"
     awk -F"$SEP" -v full_hr="$hr" -v termwidth="$TERMWIDTH" -v color_mode="$COLORMODE" \
-            -f formatoutput.awk "$STATEFILE"
+            -f formatoutput.awk "$VISIBLE_ENTRIES_FILE"
 }
 
 
@@ -121,7 +152,7 @@ while test "$1"; do
             ;;
         -r | --reload )
             fix_tag_colors
-            printf '' > "$CACHEFILE"
+            printf '' > "$ENTRIES_FILE"
             find "$ROOT" -type f -name '*.metadata' | sort \
                 | while read f ; do
                 index_metadata_file "$f"
@@ -134,16 +165,18 @@ while test "$1"; do
             ;;
         -lt )
             printf '[1m  Tags:[0m\n'
-            cut -d"$SEP" -f"$FIELD_TAGS" "$CACHEFILE" | grep '.' | tr ',' '\n' \
+            cut -d"$SEP" -f"$FIELD_TAGS" "$ENTRIES_FILE" | grep '.' | tr ',' '\n' \
                 | sort | uniq -c | sort -nr | column
-            #cut -d"$SEP" -f$FIELD_TAGS,$FIELD_TAG_COLORS "$CACHEFILE" | grep '.' \
+            #cut -d"$SEP" -f$FIELD_TAGS,$FIELD_TAG_COLORS "$ENTRIES_FILE" | grep '.' \
                 #| awk -F"$SEP" '{split($1,t,",");split($2,c,",");for(x in t){print c[x] "\t" t[x]}}'\
                 #| sort -t"$SEP" -k2 | uniq -c -f1 | sort -nr | column
                 #| sed -E 's/,([0-9 ]+) ([0-9;]+)\t([^,]+)/\1 [38;2;0;0;0;48;2;\2m \3 [0m/g'
             QUIET='yes'
             ;;
-        -s? )
+        -s? | -s?- )
             ARG="${1#-s}"
+            SORT_ORDER='ascending'
+            test -z "${1#-s?}" || { SORT_ORDER='descending' ; ARG="${ARG%-}" ; }
             case "$ARG" in
                 d ) SORT_KEY="$FIELD_DESC" ;;
                 n ) SORT_KEY="$FIELD_TITLE" ;;
@@ -154,7 +187,7 @@ while test "$1"; do
                     exit 1
                     ;;
             esac
-            REGEN_INDEX='yes'
+            REGEN_ENTRIES='yes'
             ;;
         -f? )
             FILTER_KEY="${1#-f}"
@@ -181,7 +214,7 @@ while test "$1"; do
                     exit 1
                     ;;
             esac
-            REGEN_INDEX='yes'
+            REGEN_ENTRIES='yes'
             ;;
         -e[0-9]* )
             if test -z "$EDITOR" ; then
@@ -194,7 +227,7 @@ while test "$1"; do
                 exit 1
             fi
             ENTRY_NUM="$(($ENTRY_NUM + 1))"
-            ENTRY="$(sed -n "$ENTRY_NUM p" "$STATEFILE")"
+            ENTRY="$(sed -n "$ENTRY_NUM p" "$STATE_FILE")"
             if test -z "$ENTRY" ; then
                 printf 'error: invalid entry index: "%d"\n' "$(($ENTRY_NUM - 1))"
                 exit 1
@@ -212,6 +245,14 @@ while test "$1"; do
 done
 
 if test -z "$QUIET" ; then
-    test -n "$REGEN_INDEX" && generate_index_view
+    test -n "$REGEN_ENTRIES" || test ! -f "$VISIBLE_ENTRIES_FILE"  && generate_index_view
     show_index_view
 fi
+
+# Save state
+set_state_value 'title_filter' "$FILTER_TITLE"
+set_state_value 'desc_filter' "$FILTER_DESC"
+set_state_value 'tag_filter' "$FILTER_TAGS"
+set_state_value 'wordcount_filter' "$FILTER_WORDCOUNT"
+set_state_value 'sort_key' "$SORT_KEY"
+set_state_value 'sort_order' "$SORT_ORDER"
