@@ -62,7 +62,7 @@ SORT_ORDER="$(get_state_value 'sort_order' "$DEF_SORT_ORDER")"
 
 # Misc
 TAB='	'  # tab character, since bash and its ilk dont like \t
-SEP="$SEP"
+SEP="$TAB"
 QUIET=''
 REGEN_ENTRIES=''
 
