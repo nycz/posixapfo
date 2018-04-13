@@ -7,7 +7,7 @@ COLORMODE="$(jq -r '.["color mode"]//"color"' "$SETTINGS_FILE")"
 
 # TODO: better names, better places
 CACHEDIR="$HOME/.cache/sapfo"
-test -e "$CACHEDIR" || mkdir -p "$CACHEDIR"
+test -d "$CACHEDIR" || mkdir -p "$CACHEDIR"
 STATE_FILE="$CACHEDIR/state"
 ENTRIES_FILE="$CACHEDIR/entries"
 VISIBLE_ENTRIES_FILE="$CACHEDIR/visible_entries"
@@ -50,8 +50,8 @@ get_state_value() {
 }
 set_state_value() {
     # Remove any old matching line and add the new line
+    # $1 = key, $2 = new value
     sed -i '/^'"$1"'=/d ; $a '"$1"'='"$2" "$STATE_FILE"
-    #sed -i '/^'"$1"'=/d ; s/^\('"$1"'=\).*$/\1'"$2"'/' "$STATE_FILE"
 }
 FILTER_TITLE="$(get_state_value 'title_filter' "$DEF_TITLE_FILTER")"
 FILTER_DESC="$(get_state_value 'desc_filter' "$DEF_DESC_FILTER")"
@@ -61,7 +61,8 @@ SORT_KEY="$(get_state_value 'sort_key' "$DEF_SORT_KEY")"
 SORT_ORDER="$(get_state_value 'sort_order' "$DEF_SORT_ORDER")"
 
 # Misc
-SEP='	'  # tab character, since bash and its ilk dont like \t
+TAB='	'  # tab character, since bash and its ilk dont like \t
+SEP="$SEP"
 QUIET=''
 REGEN_ENTRIES=''
 
@@ -133,20 +134,25 @@ index_metadata_file() {
 }
 
 generate_index_view() {
+    # Reverse order if descending
     test "$SORT_ORDER" = 'descending' && REVERSE_ARG='-r' || REVERSE_ARG=''
-    awk -F"$SEP" -v tag_filter=""$(printf "%s\n" "$FILTER_TAGS" | sed -E 's/ *([(),|]) */\1/g')"" \
-        -f tagfilter.awk "$ENTRIES_FILE" \
+    # Sort as a number if sorting by a numeric field
+    test "$SORT_KEY" = "$FIELD_WORDCOUNT" && NUM_SORT_ARG='-n' || NUM_SORT_ARG=''
+    awk -F"${SEP?"no separator"}" -v tag_filter="$(printf "%s\n" "$FILTER_TAGS" | sed -E 's/ *([(),|]) */\1/g')" \
+        -f tagfilter.awk "${ENTRIES_FILE?"no entries file"}" \
         | sed -n 'h; s/^\([^\t]*\t\)\{3\}\([^\t]*\)\t.*/\2/g ; /'"$FILTER_TITLE"'/I !d ; g ; p' \
         | sed -n 'h; s/^\([^\t]*\t\)\{4\}\([^\t]*\)\t.*/\2/g ; /'"$FILTER_DESC"'/I !d ; g ; p' \
-        | awk -F"$SEP" '{if ($'"$FIELD_WORDCOUNT"' '"$FILTER_WORDCOUNT"') {print $0}}' \
-        | sort -h -t"$SEP" -k"$SORT_KEY" $REVERSE_ARG > "$VISIBLE_ENTRIES_FILE"
+        | awk -F"${SEP?"no separator"}" '{if ($'"$FIELD_WORDCOUNT"' '"$FILTER_WORDCOUNT"') {print $0}}' \
+        | sort -f -t"${SEP?"no separator"}" -k"$SORT_KEY" $REVERSE_ARG $NUM_SORT_ARG \
+        > "${VISIBLE_ENTRIES_FILE?"no visible entries file"}"
 }
 
 show_index_view() {
     TERMWIDTH="$(tput cols)"
     hr="$(printf "%${TERMWIDTH}s" | sed 's/ /─/g')"
-    awk -F"$SEP" -v full_hr="$hr" -v termwidth="$TERMWIDTH" -v color_mode="$COLORMODE" \
-            -f formatoutput.awk "$VISIBLE_ENTRIES_FILE"
+    awk -F"${SEP?"no separator"}" -v full_hr="$hr" -v termwidth="$TERMWIDTH" \
+        -v color_mode="${COLORMODE?"no color mode"}" \
+        -f formatoutput.awk "${VISIBLE_ENTRIES_FILE?"no visible entries file"}"
 }
 
 
@@ -154,6 +160,9 @@ while test "$1"; do
     case "$1" in
         --mono )
             COLORMODE="mono";
+            ;;
+        --color )
+            COLORMODE="color";
             ;;
         --truecolor | --24bit )
             COLORMODE="truecolor";
