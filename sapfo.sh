@@ -158,6 +158,43 @@ show_index_view() {
 
 while test "$1"; do
     case "$1" in
+        -h | --help )
+            printf '%s\n  %s\n  %s\n\n' 'Usage:' \
+                'safpo.sh [-s[ncm]] [-f[ndtc] <FILTER>]'\
+                '         [--mono|--color|--truecolor|--24bit] [-lt] [-r]'
+            printf '%s\n%s\n\n' \
+                'Running without any arguments shows the currently visible entries' \
+                '(after active filtering and sorting has been applied).'
+            printf '%s\n' '
+                Misc options:
+                    -h --help       ;show this help
+                    --mono          ;turn off color (only bold format at most)
+                    --color         ;use 8/16 colors [default]
+                    --truecolor --24bit      ;use 24bit color
+                Sort options:
+                    -s              ;print active sort key
+                    -sn -sn-        ;sort on name (append - for reverse)
+                    -sc -sc-        ;sort on wordcount (append - for reverse)
+                    -sm -sm-        ;sort on last modified date (append - for reverse)
+                Filter options:
+                    -f              ;print active filters
+                    -fn <TEXT>      ;show all entries with <TEXT> in their title (case insensitive)
+                    -fd <TEXT>      ;show all entries with <TEXT> in their description (case insensitive)
+                    -ft <TAGEXPR>   ;show all entries matching the tag expression (see section below)
+                    -fc <NUMEXPR>   ;show all entries matching the wordcount expression (see section below)
+                    -f0             ;reset all filters
+                    -f[ndtc]0       ;reset a specific filter
+                Actions:
+                    -lt             ;list all tags
+                    -r              ;update the cached data
+                    -e<NUM>         ;edit the entry with index <NUM>
+                TODO:
+                the "section below"
+                ' | sed -e '1d;$d; s/^ *//' -e 's/ *; */ ;/' \
+                | column -s';' -t \
+                | sed 's/^\([^A-Z]\)/  \1/ ; 3,$ {/^[A-Z]/ s/^/\n/ }'  # Format help output
+            QUIET='yes'
+            ;;
         --mono )
             COLORMODE="mono";
             ;;
