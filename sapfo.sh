@@ -15,8 +15,8 @@ TAG_COLORS_FILE="$CACHEDIR/fixedtagcolors.json"
 
 
 # Fields
-# metafname = 1
-# meta last modified = 2
+FIELD_METADATA_FNAME=1
+FIELD_METADATA_LAST_MODIFIED=2
 FIELD_LAST_MODIFIED=3
 FIELD_TITLE=4
 FIELD_DESC=5
@@ -64,6 +64,14 @@ SORT_ORDER="$(get_state_value 'sort_order' "$DEF_SORT_ORDER")"
 SEP='	'  # tab character, since bash and its ilk dont like \t
 QUIET=''
 REGEN_ENTRIES=''
+
+
+fatal_error() {
+    # $1 = message, $2 = exit code (optional)
+    test "$COLORMODE" = 'mono' && ERRORCOLOR='' || ERRORCOLOR="[1;31m"
+    printf '%serror:[0m %s\n' "$ERRORCOLOR" "$1"
+    exit "${2-1}"  # default to exit code 1
+}
 
 
 fix_tag_colors() {
@@ -183,8 +191,7 @@ while test "$1"; do
                 c ) SORT_KEY="$FIELD_WORDCOUNT" ;;
                 m ) SORT_KEY="$FIELD_LAST_MODIFIED" ;;
                 * )
-                    printf 'error: invalid sort key: "%s"\n' "$ARG"
-                    exit 1
+                    fatal_error "invalid sort key: $SORT_KEY"
                     ;;
             esac
             REGEN_ENTRIES='yes'
@@ -192,53 +199,36 @@ while test "$1"; do
         -f? )
             FILTER_KEY="${1#-f}"
             shift
-            if test -z "$1" ; then
-                printf 'error: no filter specified\n'
-                exit 1
-            fi
+            test -z "$1" && fatal_error 'no filter specified'
             FILTER_ARG="$1"
             case "$FILTER_KEY" in
                 t ) FILTER_TAGS="$FILTER_ARG" ;;
                 d ) FILTER_DESC="$FILTER_ARG" ;;
                 n ) FILTER_TITLE="$FILTER_ARG" ;;
                 c )
-                    if $(printf '%s\n' "$FILTER_ARG" | grep -qE '^([<>]=?|==) *[0-9]+$') ; then
-                        FILTER_WORDCOUNT="$FILTER_ARG"
-                    else
-                        printf 'error: invalid wordcount filter: "%s"\n' "$FILTER_ARG"
-                        exit 1
-                    fi
+                    printf '%s\n' "$FILTER_ARG" | grep -qE '^([<>]=?|==) *[0-9]+$' \
+                        && FILTER_WORDCOUNT="$FILTER_ARG" \
+                        || fatal_error "invalid wordcount filter: $FILTER_ARG"
                     ;;
                 * )
-                    printf 'error: invalid filter key: "%s"\n' "$ARG"
-                    exit 1
+                    fatal_error "invalid filter key: $FILTER_KEY"
                     ;;
             esac
             REGEN_ENTRIES='yes'
             ;;
         -e[0-9]* )
-            if test -z "$EDITOR" ; then
-                printf 'error: no $EDITOR specified\n'
-                exit 1
-            fi
+            test -z "$EDITOR" && fatal_error 'no $EDITOR specified'
             ENTRY_NUM="${1#-e}"
-            if ! $(printf '%s\n' "$ENTRY_NUM" | grep -qE '^[0-9]$'); then
-                printf 'error: entry index is not a number: "%s"\n' "$ENTRY_NUM"
-                exit 1
-            fi
-            ENTRY_NUM="$(($ENTRY_NUM + 1))"
-            ENTRY="$(sed -n "$ENTRY_NUM p" "$STATE_FILE")"
-            if test -z "$ENTRY" ; then
-                printf 'error: invalid entry index: "%d"\n' "$(($ENTRY_NUM - 1))"
-                exit 1
-            fi
-            ENTRY_FNAME="$(printf '%s\n' "$ENTRY" | cut -d"$SEP" -f1)"
+            printf '%s\n' "$ENTRY_NUM" | grep -qE '^[0-9]$' || fatal_error "entry index is not a number: $ENTRY_NUM"
+            # Get the entry data from the visible entries cache
+            ENTRY="$(sed -n "$(($ENTRY_NUM + 1)) p" "$VISIBLE_ENTRIES_FILE")"
+            test -z "$ENTRY" && fatal_error "invalid entry index: $ENTRY_NUM"
+            ENTRY_FNAME="$(printf '%s\n' "$ENTRY" | cut -d"$SEP" -f"$FIELD_METADATA_FNAME")"
             "$EDITOR" "$ENTRY_FNAME"
             QUIET='yes'
             ;;
         * )
-            printf 'error: invalid argument: "%s"\n' "$1"
-            exit 1
+            fatal_error "invalid argument: $1"
             ;;
     esac
     shift
