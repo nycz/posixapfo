@@ -181,12 +181,26 @@ while test "$1"; do
                 #| sed -E 's/,([0-9 ]+) ([0-9;]+)\t([^,]+)/\1 [38;2;0;0;0;48;2;\2m \3 [0m/g'
             QUIET='yes'
             ;;
+        -s )
+            # Show current sort key
+            unset SORT_KEY_NAME
+            if test "$SORT_KEY" = "$FIELD_LAST_MODIFIED"; then
+                SORT_KEY_NAME='last modified date'
+            elif test "$SORT_KEY" = "$FIELD_TITLE"; then
+                SORT_KEY_NAME='title'
+            elif test "$SORT_KEY" = "$FIELD_WORDCOUNT"; then
+                SORT_KEY_NAME='wordcount'
+            fi
+            printf 'current sort key: %s\n' "${SORT_KEY_NAME?"unknown sort key: $SORT_KEY"}"
+            QUIET='yes'
+            ;;
         -s? | -s?- )
+            # Sort
             ARG="${1#-s}"
             SORT_ORDER='ascending'
+            # Set order to reverse if there's a trailing dash
             test -z "${1#-s?}" || { SORT_ORDER='descending' ; ARG="${ARG%-}" ; }
             case "$ARG" in
-                d ) SORT_KEY="$FIELD_DESC" ;;
                 n ) SORT_KEY="$FIELD_TITLE" ;;
                 c ) SORT_KEY="$FIELD_WORDCOUNT" ;;
                 m ) SORT_KEY="$FIELD_LAST_MODIFIED" ;;
