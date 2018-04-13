@@ -210,15 +210,50 @@ while test "$1"; do
             esac
             REGEN_ENTRIES='yes'
             ;;
+        -f0 )
+            # Reset all filters
+            printf 'resetting all filters\n'
+            FILTER_TITLE="$DEF_TITLE_FILTER"
+            FILTER_DESC="$DEF_DESC_FILTER"
+            FILTER_TAGS="$DEF_TAG_FILTER"
+            FILTER_WORDCOUNT="$DEF_WORDCOUNT_FILTER"
+            QUIET='yes'
+            ;;
+        -f?0 )
+            # Reset a specific filter
+            FILTER_KEY="${1#-f}"
+            case "$FILTER_KEY" in
+                n0 )
+                    FILTER_TITLE="$DEF_TITLE_FILTER"
+                    printf 'resetting title filter\n'
+                    ;;
+                d0 )
+                    FILTER_DESC="$DEF_DESC_FILTER"
+                    printf 'resetting description filter\n'
+                    ;;
+                t0 )
+                    FILTER_TAGS="$DEF_TAG_FILTER"
+                    printf 'resetting tag filter\n'
+                    ;;
+                c0 )
+                    FILTER_WORDCOUNT="$DEF_WORDCOUNT_FILTER"
+                    printf 'resetting wordcount filter\n'
+                    ;;
+                * )
+                    fatal_error "invalid filter key: $ARG"
+                    ;;
+            esac
+            ;;
         -f? )
+            # Filter
             FILTER_KEY="${1#-f}"
             shift
             test -z "$1" && fatal_error 'no filter specified'
             FILTER_ARG="$1"
             case "$FILTER_KEY" in
-                t ) FILTER_TAGS="$FILTER_ARG" ;;
-                d ) FILTER_DESC="$FILTER_ARG" ;;
                 n ) FILTER_TITLE="$FILTER_ARG" ;;
+                d ) FILTER_DESC="$FILTER_ARG" ;;
+                t ) FILTER_TAGS="$FILTER_ARG" ;;
                 c )
                     printf '%s\n' "$FILTER_ARG" | grep -qE '^([<>]=?|==) *[0-9]+$' \
                         && FILTER_WORDCOUNT="$FILTER_ARG" \
