@@ -44,7 +44,7 @@ Sorting:
   -sm, -sm-               sort on last modified date (append - for reverse)
 
 Filtering:
-  -f                      print active filters (TODO)
+  -f                      print active filters
   -fn <TEXT>              show entries with <TEXT> in their title
   -fd <TEXT>              show entries with <TEXT> in their description
   -ft <TAGEXPR>           show entries matching the tag expression
@@ -313,6 +313,11 @@ while test "$1"; do
                     ;;
             esac
             REGEN_ENTRIES='yes'
+            ;;
+        -f )
+            printf 'Active filters:\n  title: %s\n  desc: %s\n  tags: %s\n  wordcount: %s\n' \
+                "$FILTER_TITLE" "$FILTER_DESC" "$FILTER_TAGS" "$FILTER_WORDCOUNT"
+            QUIET='yes'
             ;;
         -f0 )
             # Reset all filters
