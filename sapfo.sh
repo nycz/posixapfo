@@ -52,6 +52,9 @@ Filtering:
   -f0                     reset all filters
   -f[ndtc]0               reset a specific filter
 
+Misc options:
+  -q                      do not show the visible entries
+
 Help options:
   -h, --help              show this help and exit
   -hf                     show info about filtering and exit (TODO)
@@ -256,6 +259,9 @@ while test "$1"; do
         --truecolor | --24bit )
             COLORMODE="truecolor";
             ;;
+        -q )
+            QUIET='yes'
+            ;;
         -r | --reload )
             fix_tag_colors
             printf '' > "$ENTRIES_FILE"
@@ -310,12 +316,10 @@ while test "$1"; do
             ;;
         -f0 )
             # Reset all filters
-            printf 'resetting all filters\n'
             FILTER_TITLE="$DEF_TITLE_FILTER"
             FILTER_DESC="$DEF_DESC_FILTER"
             FILTER_TAGS="$DEF_TAG_FILTER"
             FILTER_WORDCOUNT="$DEF_WORDCOUNT_FILTER"
-            QUIET='yes'
             ;;
         -f?0 )
             # Reset a specific filter
