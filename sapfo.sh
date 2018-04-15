@@ -112,7 +112,6 @@ ENTRIES_FILE="$CACHE_DIR/entries"
 VISIBLE_ENTRIES_FILE="$CACHE_DIR/visible_entries"
 TAG_COLORS_FILE="$CACHE_DIR/fixedtagcolors.json"
 
-
 # Fields
 FIELD_METADATA_FNAME=1
 FIELD_METADATA_LAST_MODIFIED=2
@@ -219,17 +218,41 @@ index_metadata_files() {
         > "$ENTRIES_FILE"
 }
 
+filter_on_field() {
+    FIELD="$1"
+    FILTER="$2"
+    sed -nE '
+        # Put the whole line in the hold space (we want to print it later)
+        h
+        # Fields are separated by tabs, so skip FIELD number of tabs to get to
+        # the right field we want to test
+        s/^([^\t]*\t){'"$FIELD"'}([^\t]*)\t.*/\2/g
+        # Delete the line if the pattern (case-insensitive) does not match
+        /'"$FILTER"'/I !d
+        # Get the whole line back from the hold space and print it
+        g ; p'
+}
 
 generate_index_view() {
+    # Fix tag filter string (aka get rid of them)
+    FTFS='s/ *([(),|]) */\1/g'
+    # Extract the tag macros from the settings file
+    GET_TAG_MACROS='.["tag macros"]|to_entries|map("\(.key)\t\(.value)")|join("\n")'
     # Reverse order if descending
-    test "$SORT_ORDER" = 'descending' && REVERSE_ARG='-r' || REVERSE_ARG=''
+    REVERSE_ARG=''
+    test "${SORT_ORDER?"no sort order"}" = 'descending' && REVERSE_ARG='-r'
     # Sort as a number if sorting by a numeric field
-    test "$SORT_KEY" = "$FIELD_WORDCOUNT" && NUM_SORT_ARG='-n' || NUM_SORT_ARG=''
-    awk -F"${SEP?"no separator"}" -v tag_filter="$(printf '%s\n' "$FILTER_TAGS" | sed -E 's/ *([(),|]) */\1/g')" \
+    NUM_SORT_ARG=''
+    test "${SORT_KEY?"no sort key"}" = "$FIELD_WORDCOUNT" && NUM_SORT_ARG='-n'
+    # Do the thing
+    awk -F"${SEP?"no separator"}" -v tag_filter="$(printf '%s\n' "$FILTER_TAGS" | sed -E "$FTFS")" \
+        -v raw_tag_macros="$(jq -r "$GET_TAG_MACROS" "${SETTINGS_FILE?"no settings file"}" \
+                             | sed -E "$FTFS")" \
         -f tagfilter.awk "${ENTRIES_FILE?"no entries file"}" \
-        | sed -n 'h; s/^\([^\t]*\t\)\{3\}\([^\t]*\)\t.*/\2/g ; /'"$FILTER_TITLE"'/I !d ; g ; p' \
-        | sed -n 'h; s/^\([^\t]*\t\)\{4\}\([^\t]*\)\t.*/\2/g ; /'"$FILTER_DESC"'/I !d ; g ; p' \
-        | awk -F"${SEP?"no separator"}" '{if ($'"$FIELD_WORDCOUNT"' '"$FILTER_WORDCOUNT"') {print $0}}' \
+        | filter_on_field "$FIELD_TITLE" "$FILTER_TITLE" \
+        | filter_on_field "$FIELD_DESC" "$FILTER_DESC" \
+        | awk -F"${SEP?"no separator"}" \
+            '{if ($'"$FIELD_WORDCOUNT"' '"$FILTER_WORDCOUNT"') {print $0}}' \
         | sort -f -t"${SEP?"no separator"}" -k"$SORT_KEY" $REVERSE_ARG $NUM_SORT_ARG \
         > "${VISIBLE_ENTRIES_FILE?"no visible entries file"}"
 }

@@ -9,6 +9,13 @@
 BEGIN {
     # Init stuff
     split(tag_filter, tag_filter_array, ",");
+    # Init tag macros
+    split(raw_tag_macros, tag_macro_array, "\n");
+    for (tag_macro_array_i in tag_macro_array) {
+        split(tag_macro_array[tag_macro_array_i], tag_macro_pair, "\t");
+        tag_macros["@"tag_macro_pair[1]] = tag_macro_pair[2];
+    }
+    # Generate the tokens
     tag_token_count = tokenize(tag_filter, tag_tokens,   "", "", 0, 0);
 }
 function tokenize(text, tokens,    char, buf, pos, depth) {
@@ -17,30 +24,47 @@ function tokenize(text, tokens,    char, buf, pos, depth) {
     pos = 2;
     chunk_starts[1] = 1;
     depth = 1;
-    while (text) {
-        char = substr(text, 1, 1);
+    while (1) {
         # Make the linter happy
         if (length(text) > 1) {
+            char = substr(text, 1, 1);
             text = substr(text, 2);
+        } else if (length(text) > 0) {
+            char = substr(text, 1, 1);
+            text = "";
         } else {
+            char = "";
             text = "";
         }
         # Special stuff happens to special characters!
-        if (char ~ /^[()|,]$/) {
+        if (char ~ /^[()|,]?$/) {
             if (buf) {
                 # Add the buffer to the token list
                 if (char == "(" && buf != "-") {
-                    print "Error: Invalid starting parenthesis";
+                    print "Error: Invalid starting parenthesis" > "/dev/stderr";
                     exit 1;
                 }
-                tokens[pos] = buf;
-                pos++;
-                buf = "";
+                # Expand macros
+                if (buf ~ /^-?@/) {
+                    # Add - if negative
+                    if (buf ~ /^-/) {
+                        tokens[pos] = "-";
+                        pos++;
+                        buf = substr(buf, 2);
+                    }
+                    # Add the macro to the text
+                    text = "(" tag_macros[buf] ")" char text;
+                    buf = "";
+                } else {
+                    tokens[pos] = buf;
+                    pos++;
+                    buf = "";
+                }
             } else {
                 # Some special characters shouldn't be following others
                 t = tokens[pos-1];
                 if ((t == ")" && char == "(") || (t ~ /^[(,|]$/ && char != "(")) {
-                    print "Error: Invalid parentheses";
+                    print "Error: Invalid parentheses" > "/dev/stderr";
                     exit 2;
                 }
             }
@@ -50,10 +74,10 @@ function tokenize(text, tokens,    char, buf, pos, depth) {
                 if (mode == " ") {
                     tokens[chunk_starts[depth]] = char;
                 } else if (mode != char) {
-                    printf("Error: mixed comparison operators: '%s' != '%s'\n", mode, char);
+                    printf("Error: mixed comparison operators: '%s' != '%s'\n", mode, char) > "/dev/stderr";
                     exit 3;
                 }
-            } else {
+            } else if (char != "") {
                 # All the other special chars should be on their merry way
                 tokens[pos] = char;
                 pos++;
@@ -74,11 +98,10 @@ function tokenize(text, tokens,    char, buf, pos, depth) {
             # If the character isn't special, just append it
             buf = buf char;
         }
-    }
-    # Alright we're done here but don't forget the last one
-    if (buf) {
-        tokens[pos] = buf;
-        pos++;
+        # Poor folk's do ... until()
+        if (buf == "" && text == "") {
+            break;
+        }
     }
     # If there's only one token, throw your AND in the air cause we just don't care
     if (tokens[1] == " ") {
@@ -98,7 +121,7 @@ function match_tags(tokens, token_count, tags_, pos, depth) {
                 set_inverse = 1;
                 pos++;
                 if (tokens[pos] != "(") {
-                    printf("Error 2: only '(' can follow '-', not '%s'\n", tokens[pos]);
+                    printf("Error 2: only '(' can follow '-', not '%s'\n", tokens[pos]) > "/dev/stderr";
                     exit 6;
                 }
             }
@@ -106,12 +129,12 @@ function match_tags(tokens, token_count, tags_, pos, depth) {
             pos++;
             mode_stack[depth] = tokens[pos];
             # Set default result, 1 for AND and 0 for OR
-            if (tokens[pos] == ",") {
+            if (tokens[pos] == "," || tokens[pos] == " ") {
                 result_stack[depth] = 1;
             } else if (tokens[pos] == "|") {
                 result_stack[depth] = 0;
             } else {
-                printf("Error 1: invalid mode: '%s'\n", tokens[pos]);
+                printf("Error 1: invalid mode: '%s'\n", tokens[pos]) > "/dev/stderr";
                 exit 5;
             }
             inverse_stack[depth] = inverse_stack[depth-1];
@@ -129,7 +152,7 @@ function match_tags(tokens, token_count, tags_, pos, depth) {
             } else if (mode_stack[depth] == "|") {
                 result_stack[depth] = result_stack[depth] || result;
             } else {
-                printf("Error 3: invalid mode: '%s'\n", mode_stack[depth]);
+                printf("Error 3: invalid mode: '%s'\n", mode_stack[depth]) > "/dev/stderr";
                 exit 5;
             }
         } else {
@@ -151,7 +174,7 @@ function match_tags(tokens, token_count, tags_, pos, depth) {
             } else if (mode_stack[depth] == "|") {
                 result_stack[depth] = result_stack[depth] || result;
             } else {
-                printf("Error 4: invalid mode: '%s'\n", mode_stack[depth]);
+                printf("Error 4: invalid mode: '%s'\n", mode_stack[depth]) > "/dev/stderr";
                 exit 5;
             }
         }
