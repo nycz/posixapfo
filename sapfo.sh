@@ -26,7 +26,7 @@ Arguments are executed in order of appearance, except for path overrides
 which have to be first. This will usually not affect anything, since the
 actual filtering and sorting is done after all arguments have been
 parsed, but options that affect output (eg. color modes and help)
-and options that override the regular view mode (eg. edit or reload)
+and options that override the regular view mode (eg. edit)
 might behave differently.
 
 Running without any arguments shows the currently visible entries
@@ -34,7 +34,6 @@ Running without any arguments shows the currently visible entries
 
 Actions:
   -lt                     list all tags
-  -r                      update the cached data
   -e<NUM>                 edit the entry with index <NUM>
 
 Sorting:
@@ -54,6 +53,8 @@ Filtering:
 
 Misc options:
   -q                      do not show the visible entries
+  -r                      reload all entries
+                            (done automatically on edit and undo)
 
 Help options:
   -h, --help              show this help and exit
@@ -184,43 +185,38 @@ fix_tag_colors() {
 }
 
 
-generate_cache() {
-    # TODO: fix this more
+index_metadata_files() {
     fix_tag_colors
-    ALL_FILES="$(find "$ROOT" -type f -name '*.metadata' | sort | while read -r f; do printf '%s\t%s\t%s\n' "$f" $(stat -c '%Y' "$f") $(stat -c '%Y' "$(dirname "$f")/$(basename "$f" | sed "$DEXT")") ; done)"
-    CACHED_FILES="$(cut -f1-3 metadata.json)"
-    printf '%s' "$ALL_FILES" > allfiles
-    printf '%s' "$CACHED_FILES" > cachedfiles
-    diff allfiles cachedfiles
-}
+    FNAMES_FILE="$CACHE_DIR/.temp-fnames"
+    METADATA_FNAMES_FILE="$CACHE_DIR/.temp-metafnames"
+    WORDCOUNTS_FILE="$CACHE_DIR/.temp-wordcounts"
+    MODIFYDATES_FILE="$CACHE_DIR/.temp-modifydates"
+    METADATA_MODIFYDATES_FILE="$CACHE_DIR/.temp-metamodifydates"
 
-
-index_metadata_file() {
-    METAFNAME="$1"
-    FNAME="$(basename "$METAFNAME")"
-    FNAME="${FNAME%.*}"
-    FNAME="$(dirname "$METAFNAME")/${FNAME#.}"
-    WORDS="$(wc -w "$FNAME" | cut -d' ' -f1)"
-    METAMODIFYDATE="$(stat -c '%Y' "$METAFNAME")"
-    MODIFYDATE="$(stat -c '%Y' "$FNAME")"
-    jq -rc --slurpfile tag_colors "$TAG_COLORS_FILE" --arg default_tag_color '102;102;119' '
-        [
-            $metafile,
-            $meta_last_modified,
-            $last_modified,
-            .title,
-            .description,
-            #(.tags | sort | map(gsub(" "; "_") | "#\(.),") | join("")),
-            (.tags | sort | join(",")),
-            (.tags | sort | map($tag_colors[0][.]//$default_tag_color) | join(",")),
-            $length
-        ] | join("\t")
-        ' \
-        --arg metafile "$METAFNAME" \
-        --arg length "$WORDS" \
-        --arg meta_last_modified "$METAMODIFYDATE" \
-        --arg last_modified "$MODIFYDATE" \
-        "$METAFNAME" >> "$ENTRIES_FILE"
+    # Output format should be: (separated by tab)
+    # metafname, meta_last_modified, last_modified, title, desc, tags,
+    #   tag colors, wordcount
+    find "$ROOT" -type f -name '*.metadata' | sort > "$METADATA_FNAMES_FILE"
+    sed 's_/\.\([^/]\+\)\.metadata$_/\1_' "$METADATA_FNAMES_FILE" > "$FNAMES_FILE"
+    xargs -d'\n' wc -w < "$FNAMES_FILE" | head -n-1 \
+        | sed 's/^ *\([0-9]\+\) \+.*$/\1/' > "$WORDCOUNTS_FILE"
+    xargs -d'\n' stat -c '%Y' < "$FNAMES_FILE" > "$MODIFYDATES_FILE"
+    xargs -d'\n' stat -c '%Y' < "$METADATA_FNAMES_FILE" > "$METADATA_MODIFYDATES_FILE"
+    # Read all the metadata files, extract the relevant things with jq,
+    # and join all the stuff together with paste
+    xargs -d'\n' \
+        jq -r --slurpfile tag_colors "$TAG_COLORS_FILE" \
+            --arg default_tag_color '102;102;119' \
+            '[
+                .title,
+                .description,
+                (.tags | sort | join(",")),
+                (.tags | sort | map($tag_colors[0][.]//$default_tag_color) | join(","))
+            ] | join("\t")' \
+        < "$METADATA_FNAMES_FILE" \
+        | paste "$METADATA_FNAMES_FILE" "$METADATA_MODIFYDATES_FILE" \
+            "$MODIFYDATES_FILE" - "$WORDCOUNTS_FILE" \
+        > "$ENTRIES_FILE"
 }
 
 
@@ -263,17 +259,7 @@ while test "$1"; do
             QUIET='yes'
             ;;
         -r | --reload )
-            fix_tag_colors
-            printf '' > "$ENTRIES_FILE"
-            find "$ROOT" -type f -name '*.metadata' | sort \
-                | while read -r f ; do
-                index_metadata_file "$f"
-            done
-            QUIET='yes'
-            #generate_cache "$2"
-            ;;
-        t | tags )
-            fix_tag_colors
+            RELOAD_ENTRIES='yes'
             ;;
         -lt )
             printf '[1m  Tags:[0m\n'
@@ -325,6 +311,7 @@ while test "$1"; do
             FILTER_DESC="$DEF_DESC_FILTER"
             FILTER_TAGS="$DEF_TAG_FILTER"
             FILTER_WORDCOUNT="$DEF_WORDCOUNT_FILTER"
+            REGEN_ENTRIES='yes'
             ;;
         -f?0 )
             # Reset a specific filter
@@ -350,6 +337,7 @@ while test "$1"; do
                     fatal_error "invalid filter key: $ARG"
                     ;;
             esac
+            REGEN_ENTRIES='yes'
             ;;
         -f? )
             # Filter
@@ -393,6 +381,7 @@ while test "$1"; do
                     printf 'Remove the last line in the undo file or stop undoing.\n'
                     # TODO: force undo and/or confirm y/n
                 fi
+                RELOAD_ENTRIES='yes'
             fi
             ;;
         -e[0-9]* )
@@ -421,6 +410,7 @@ while test "$1"; do
                         # Append the data row, and replace the newline with tab
                         N; y/\n/\t/' \
                     >> "$UNDO_FILE"
+                RELOAD_ENTRIES='yes'
             fi
             QUIET='yes'
             ;;
@@ -432,7 +422,13 @@ while test "$1"; do
 done
 
 if test -z "$QUIET" ; then
-    test -n "$REGEN_ENTRIES" || test ! -f "$VISIBLE_ENTRIES_FILE"  && generate_index_view
+    if test -n "$RELOAD_ENTRIES" || test ! -f "$ENTRIES_FILE" ; then
+        index_metadata_files
+        REGEN_ENTRIES='yes'
+    fi
+    if test -n "$REGEN_ENTRIES" || test ! -f "$VISIBLE_ENTRIES_FILE" ; then
+        generate_index_view
+    fi
     show_index_view
 fi
 
