@@ -1,18 +1,112 @@
 #!/bin/sh
+DEFAULT_SETTINGS_FILE="$HOME/.config/sapfo/settings.json"
+DEFAULT_CACHE_DIR="$HOME/.cache/sapfo"
+
+
+fatal_error() {
+    # $1 = message, $2 = exit code (optional)
+    ERROR_PREFIX='error: '
+    if test "$COLORMODE" = 'mono' ; then
+        printf '%s%s\n' "$ERROR_PREFIX" "$1"
+    else
+        printf '%s%s%s%s\n' '[1;31m' "$ERROR_PREFIX" '[0m' "$1"
+    fi
+    exit "${2-1}"  # default to exit code 1
+}
+
+
+show_help() {
+    SCRIPTNAME="$(basename "$0")"
+    printf '%s' \
+'Usage:
+  '"$SCRIPTNAME"' [path-overrides] [options]
+  '"$SCRIPTNAME"' -h | --help | (specific-help-topics)
+
+Arguments are executed in order of appearance, except for path overrides
+which have to be first. This will usually not affect anything, since the
+actual filtering and sorting is done after all arguments have been
+parsed, but options that affect output (eg. color modes and help)
+and options that override the regular view mode (eg. edit or reload)
+might behave differently.
+
+Running without any arguments shows the currently visible entries
+(after active filtering and sorting has been applied).
+
+Actions:
+  -lt                     list all tags
+  -r                      update the cached data
+  -e<NUM>                 edit the entry with index <NUM>
+
+Sorting:
+  -s                      print active sort key
+  -sn, -sn-               sort on name (append - for reverse)
+  -sc, -sc-               sort on wordcount (append - for reverse)
+  -sm, -sm-               sort on last modified date (append - for reverse)
+
+Filtering:
+  -f                      print active filters (TODO)
+  -fn <TEXT>              show entries with <TEXT> in their title
+  -fd <TEXT>              show entries with <TEXT> in their description
+  -ft <TAGEXPR>           show entries matching the tag expression
+  -fc <NUMEXPR>           show entries matching the wordcount expression
+  -f0                     reset all filters
+  -f[ndtc]0               reset a specific filter
+
+Help options:
+  -h, --help              show this help and exit
+  -hf                     show info about filtering and exit (TODO)
+  -hs                     show info about sorting and exit (TODO)
+  -he                     show info about editing and exit (TODO)
+
+Color modes:
+  --mono                  turn off color
+  --color                 use 8/16 colors [default]
+  --truecolor, --24bit    use 24bit color
+
+Path overrides:
+  --config-file <PATH>    [default: '"$DEFAULT_SETTINGS_FILE"']
+  --cache-path <PATH>     [default: '"$DEFAULT_CACHE_DIR"']
+'
+    exit 0
+}
+
+# Options needed before initialization
+while test "$1"; do
+    case "$1" in
+        -h | --help )
+            show_help
+            ;;
+        --config-file )
+            shift
+            test -z "$1" && fatal_error 'no config file path specified'
+            SETTINGS_FILE="$1"
+            ;;
+        --cache-path )
+            shift
+            test -z "$1" && fatal_error 'no cache directory path specified'
+            CACHE_DIR="$1"
+            ;;
+        * )
+            break
+            ;;
+    esac
+    shift
+done
+
 
 # Input files
-SETTINGS_FILE="$HOME/.config/sapfo/settings.json"
+SETTINGS_FILE="${SETTINGS_FILE-"$DEFAULT_SETTINGS_FILE"}"
 ROOT="$(jq -r '.["path"]' "$SETTINGS_FILE")"
 COLORMODE="$(jq -r '.["color mode"]//"color"' "$SETTINGS_FILE")"
 
 # Cache/state files
-CACHEDIR="$HOME/.cache/sapfo"
-test -d "$CACHEDIR" || mkdir -p "$CACHEDIR"
-STATE_FILE="$CACHEDIR/state"
-UNDO_FILE="$CACHEDIR/undo"
-ENTRIES_FILE="$CACHEDIR/entries"
-VISIBLE_ENTRIES_FILE="$CACHEDIR/visible_entries"
-TAG_COLORS_FILE="$CACHEDIR/fixedtagcolors.json"
+CACHE_DIR="${CACHE_DIR-"$DEFAULT_CACHE_DIR"}"
+test -d "$CACHE_DIR" || mkdir -p "$CACHE_DIR"
+STATE_FILE="$CACHE_DIR/state"
+UNDO_FILE="$CACHE_DIR/undo"
+ENTRIES_FILE="$CACHE_DIR/entries"
+VISIBLE_ENTRIES_FILE="$CACHE_DIR/visible_entries"
+TAG_COLORS_FILE="$CACHE_DIR/fixedtagcolors.json"
 
 
 # Fields
@@ -68,14 +162,6 @@ QUIET=''
 REGEN_ENTRIES=''
 
 
-fatal_error() {
-    # $1 = message, $2 = exit code (optional)
-    test "$COLORMODE" = 'mono' && ERRORCOLOR='' || ERRORCOLOR="[1;31m"
-    printf '%serror:[0m %s\n' "$ERRORCOLOR" "$1"
-    exit "${2-1}"  # default to exit code 1
-}
-
-
 fix_tag_colors() {
     printf '' > "$TAG_COLORS_FILE"
     #jq -r 'to_entries | map("\(.key)\t\(.value)") | join("\n")' tagcolors.json \
@@ -93,6 +179,7 @@ fix_tag_colors() {
             #| sed -E -e 's/^(.+)\t(.+)$/"\1": "\2",/g'
     done
 }
+
 
 generate_cache() {
     # TODO: fix this more
@@ -133,6 +220,7 @@ index_metadata_file() {
         "$METAFNAME" >> "$ENTRIES_FILE"
 }
 
+
 generate_index_view() {
     # Reverse order if descending
     test "$SORT_ORDER" = 'descending' && REVERSE_ARG='-r' || REVERSE_ARG=''
@@ -147,6 +235,7 @@ generate_index_view() {
         > "${VISIBLE_ENTRIES_FILE?"no visible entries file"}"
 }
 
+
 show_index_view() {
     TERMWIDTH="$(tput cols)"
     hr="$(printf "%${TERMWIDTH}s" | sed 's/ /─/g')"
@@ -158,43 +247,6 @@ show_index_view() {
 
 while test "$1"; do
     case "$1" in
-        -h | --help )
-            printf '%s\n  %s\n  %s\n\n' 'Usage:' \
-                'safpo.sh [-s[ncm]] [-f[ndtc] <FILTER>]'\
-                '         [--mono|--color|--truecolor|--24bit] [-lt] [-r]'
-            printf '%s\n%s\n\n' \
-                'Running without any arguments shows the currently visible entries' \
-                '(after active filtering and sorting has been applied).'
-            printf '%s\n' '
-                Misc options:
-                    -h --help       ;show this help
-                    --mono          ;turn off color (only bold format at most)
-                    --color         ;use 8/16 colors [default]
-                    --truecolor --24bit      ;use 24bit color
-                Sort options:
-                    -s              ;print active sort key
-                    -sn -sn-        ;sort on name (append - for reverse)
-                    -sc -sc-        ;sort on wordcount (append - for reverse)
-                    -sm -sm-        ;sort on last modified date (append - for reverse)
-                Filter options:
-                    -f              ;print active filters
-                    -fn <TEXT>      ;show all entries with <TEXT> in their title (case insensitive)
-                    -fd <TEXT>      ;show all entries with <TEXT> in their description (case insensitive)
-                    -ft <TAGEXPR>   ;show all entries matching the tag expression (see section below)
-                    -fc <NUMEXPR>   ;show all entries matching the wordcount expression (see section below)
-                    -f0             ;reset all filters
-                    -f[ndtc]0       ;reset a specific filter
-                Actions:
-                    -lt             ;list all tags
-                    -r              ;update the cached data
-                    -e<NUM>         ;edit the entry with index <NUM>
-                TODO:
-                the "section below"
-                ' | sed -e '1d;$d; s/^ *//' -e 's/ *; */ ;/' \
-                | column -s';' -t \
-                | sed 's/^\([^A-Z]\)/  \1/ ; 3,$ {/^[A-Z]/ s/^/\n/ }'  # Format help output
-            QUIET='yes'
-            ;;
         --mono )
             COLORMODE="mono";
             ;;
