@@ -5,7 +5,7 @@ SETTINGS_FILE="$HOME/.config/sapfo/settings.json"
 ROOT="$(jq -r '.["path"]' "$SETTINGS_FILE")"
 COLORMODE="$(jq -r '.["color mode"]//"color"' "$SETTINGS_FILE")"
 
-# TODO: better names, better places
+# Cache/state files
 CACHEDIR="$HOME/.cache/sapfo"
 test -d "$CACHEDIR" || mkdir -p "$CACHEDIR"
 STATE_FILE="$CACHEDIR/state"
@@ -80,7 +80,7 @@ fix_tag_colors() {
     #jq -r 'to_entries | map("\(.key)\t\(.value)") | join("\n")' tagcolors.json \
     jq '.["tag colors"]' "$SETTINGS_FILE" \
       | sed -E 's/"#(.)(.)(.)"/"#\1\1\2\2\3\3"/' \
-      | while read line ; do
+      | while read -r line ; do
         RGB=$(printf '%s\n' "$line" | sed -En 's/^.*": *"#(..)(..)(..)".*$/0x\1 0x\2 0x\3/p' )
         if test -z "$RGB" ; then
             REPL=""
@@ -96,12 +96,11 @@ fix_tag_colors() {
 generate_cache() {
     # TODO: fix this more
     fix_tag_colors
-    ALL_FILES="$(find "$ROOT" -type f -name '*.metadata' | sort | while read f; do printf '%s\t%s\t%s\n' "$f" $(stat -c '%Y' "$f") $(stat -c '%Y' "$(dirname "$f")/$(basename "$f" | sed "$DEXT")") ; done)"
+    ALL_FILES="$(find "$ROOT" -type f -name '*.metadata' | sort | while read -r f; do printf '%s\t%s\t%s\n' "$f" $(stat -c '%Y' "$f") $(stat -c '%Y' "$(dirname "$f")/$(basename "$f" | sed "$DEXT")") ; done)"
     CACHED_FILES="$(cut -f1-3 metadata.json)"
     printf '%s' "$ALL_FILES" > allfiles
     printf '%s' "$CACHED_FILES" > cachedfiles
     diff allfiles cachedfiles
-    X=$((16#FF))
 }
 
 
@@ -138,7 +137,7 @@ generate_index_view() {
     test "$SORT_ORDER" = 'descending' && REVERSE_ARG='-r' || REVERSE_ARG=''
     # Sort as a number if sorting by a numeric field
     test "$SORT_KEY" = "$FIELD_WORDCOUNT" && NUM_SORT_ARG='-n' || NUM_SORT_ARG=''
-    awk -F"${SEP?"no separator"}" -v tag_filter="$(printf "%s\n" "$FILTER_TAGS" | sed -E 's/ *([(),|]) */\1/g')" \
+    awk -F"${SEP?"no separator"}" -v tag_filter="$(printf '%s\n' "$FILTER_TAGS" | sed -E 's/ *([(),|]) */\1/g')" \
         -f tagfilter.awk "${ENTRIES_FILE?"no entries file"}" \
         | sed -n 'h; s/^\([^\t]*\t\)\{3\}\([^\t]*\)\t.*/\2/g ; /'"$FILTER_TITLE"'/I !d ; g ; p' \
         | sed -n 'h; s/^\([^\t]*\t\)\{4\}\([^\t]*\)\t.*/\2/g ; /'"$FILTER_DESC"'/I !d ; g ; p' \
@@ -208,7 +207,7 @@ while test "$1"; do
             fix_tag_colors
             printf '' > "$ENTRIES_FILE"
             find "$ROOT" -type f -name '*.metadata' | sort \
-                | while read f ; do
+                | while read -r f ; do
                 index_metadata_file "$f"
             done
             QUIET='yes'
@@ -302,8 +301,8 @@ while test "$1"; do
                 t ) FILTER_TAGS="$FILTER_ARG" ;;
                 c )
                     printf '%s\n' "$FILTER_ARG" | grep -qE '^([<>]=?|==) *[0-9]+$' \
-                        && FILTER_WORDCOUNT="$FILTER_ARG" \
                         || fatal_error "invalid wordcount filter: $FILTER_ARG"
+                    FILTER_WORDCOUNT="$FILTER_ARG"
                     ;;
                 * )
                     fatal_error "invalid filter key: $FILTER_KEY"
@@ -316,7 +315,7 @@ while test "$1"; do
             ENTRY_NUM="${1#-e}"
             printf '%s\n' "$ENTRY_NUM" | grep -qE '^[0-9]$' || fatal_error "entry index is not a number: $ENTRY_NUM"
             # Get the entry data from the visible entries cache
-            ENTRY="$(sed -n "$(($ENTRY_NUM + 1)) p" "$VISIBLE_ENTRIES_FILE")"
+            ENTRY="$(sed -n "$((ENTRY_NUM + 1)) p" "$VISIBLE_ENTRIES_FILE")"
             test -z "$ENTRY" && fatal_error "invalid entry index: $ENTRY_NUM"
             ENTRY_FNAME="$(printf '%s\n' "$ENTRY" | cut -d"$SEP" -f"$FIELD_METADATA_FNAME")"
             "$EDITOR" "$ENTRY_FNAME"

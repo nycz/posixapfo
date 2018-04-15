@@ -29,16 +29,16 @@ BEGIN {
     #   [K - fill line
 
     # Color modes
-    TC = "truecolor"
-    COLOR = "color"
-    MONO = "mono"
+    TC = "truecolor";
+    COLOR = "color";
+    MONO = "mono";
     # Color targets
-    BG = "background"
-    NUM = "number"
-    TITLE = "title"
-    TAG = "tag"
-    DESC = "desc"
-    HR = "hr"
+    BG = "background";
+    NUM = "number";
+    TITLE = "title";
+    TAG = "tag";
+    DESC = "desc";
+    HR = "hr";
     # Mode: True color
     fmt[BG TC] = "[39;22;23;48;2;34;51;51m";
     fmt[NUM TC] = "[22;38;2;102;119;119;3m";
@@ -88,7 +88,7 @@ function wrap(text, rel_pos, pos, wrapped_text) {
             wrapped_text = wrapped_text " ";
         }
         # Add the new text and remove it from the old
-        wrapped_text = wrapped_text substr(text, 1, rel_pos - 1)
+        wrapped_text = wrapped_text substr(text, 1, rel_pos - 1);
         if (length(text) >= rel_pos) {
             text = substr(text, rel_pos + 1);
         } else {
