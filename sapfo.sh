@@ -9,6 +9,7 @@ COLORMODE="$(jq -r '.["color mode"]//"color"' "$SETTINGS_FILE")"
 CACHEDIR="$HOME/.cache/sapfo"
 test -d "$CACHEDIR" || mkdir -p "$CACHEDIR"
 STATE_FILE="$CACHEDIR/state"
+UNDO_FILE="$CACHEDIR/undo"
 ENTRIES_FILE="$CACHEDIR/entries"
 VISIBLE_ENTRIES_FILE="$CACHEDIR/visible_entries"
 TAG_COLORS_FILE="$CACHEDIR/fixedtagcolors.json"
@@ -310,6 +311,29 @@ while test "$1"; do
             esac
             REGEN_ENTRIES='yes'
             ;;
+        -u )
+            # Undo format: (separated by tabs)
+            #   <checksum and filesize> <filename> <old data>
+            LAST_UNDO="$(tail -n1 "$UNDO_FILE")"
+            if test -z "$LAST_UNDO" ; then
+                printf 'Nothing to undo\n'
+            else
+                UNDO_CHECKSUM="$(printf '%s\n' "$LAST_UNDO" | cut -d"$TAB" -f1)"
+                ENTRY_FNAME="$(printf '%s\n' "$LAST_UNDO" | cut -d"$TAB" -f2)"
+                CURRENT_CHECKSUM="$(cksum "$ENTRY_FNAME")"
+                # Check if the file has been changed since the undo was created
+                if test "$UNDO_CHECKSUM $ENTRY_FNAME" = "$CURRENT_CHECKSUM" ; then
+                    # Dump the data into the metadata file
+                    tail -n1 "$UNDO_FILE" | cut -d"$TAB" -f3 | jq '.' > "$ENTRY_FNAME"
+                    # Remove the undo
+                    sed -i '$d' "$UNDO_FILE"
+                else
+                    printf 'The file "%s" has changed since the undo was made!\n' "$ENTRY_FNAME"
+                    printf 'Remove the last line in the undo file or stop undoing.\n'
+                    # TODO: force undo and/or confirm y/n
+                fi
+            fi
+            ;;
         -e[0-9]* )
             test -z "$EDITOR" && fatal_error 'no $EDITOR specified'
             ENTRY_NUM="${1#-e}"
@@ -318,7 +342,25 @@ while test "$1"; do
             ENTRY="$(sed -n "$((ENTRY_NUM + 1)) p" "$VISIBLE_ENTRIES_FILE")"
             test -z "$ENTRY" && fatal_error "invalid entry index: $ENTRY_NUM"
             ENTRY_FNAME="$(printf '%s\n' "$ENTRY" | cut -d"$SEP" -f"$FIELD_METADATA_FNAME")"
+            # Prepare undo
+            OLD_CHECKSUM="$(cksum "$ENTRY_FNAME")"
+            OLD_DATA="$(jq -c '.' "$ENTRY_FNAME")"
             "$EDITOR" "$ENTRY_FNAME"
+            NEW_CHECKSUM="$(cksum "$ENTRY_FNAME")"
+            if test "$OLD_CHECKSUM" = "$NEW_CHECKSUM" ; then
+                printf 'no changes were made\n'
+            else
+                printf '%s\n%s\n' "$NEW_CHECKSUM" "$OLD_DATA" \
+                    | sed '
+                        # cksums format is <checksum> <bytecount> <filename>
+                        # Replace the second space with tab
+                        # but avoid potential space in the filename
+                        s/ /\t/2
+                        # s/^\([0-9]*\) \([0-9]*\) /\1\t\2\t/
+                        # Append the data row, and replace the newline with tab
+                        N; y/\n/\t/' \
+                    >> "$UNDO_FILE"
+            fi
             QUIET='yes'
             ;;
         * )
