@@ -6,7 +6,7 @@ settings_file=''
 
 fatal_error() {
     # $1 = message, $2 = exit code (optional)
-    error_prefix='error: '
+    error_prefix='Error: '
     if test "$colormode" = 'mono' ; then
         printf '%s%s\n' "$error_prefix" "$1"
     else
@@ -159,10 +159,14 @@ filter_wordcount="$(get_state_value 'wordcount_filter' "$def_wordcount_filter")"
 sort_key="$(get_state_value 'sort_key' "$def_sort_key")"
 sort_order="$(get_state_value 'sort_order' "$def_sort_order")"
 
+# View modes
+index_view='index'
+backstory_view='backstory'
+view_mode="$index_view"
+
 # Misc
 tab='	'  # tab character, since bash and its ilk dont like \t
 sep="$tab"
-quiet=''
 regen_entries=''
 
 
@@ -177,7 +181,7 @@ fix_tag_colors() {
             repl=''
         else
             # Specifically don't quote $rgb because that is supposed to be three args
-            # shellcheck disable=SC2086
+            # shellcheck disable=SC2183,SC2086
             repl="$(printf '%d;%d;%d\n' $rgb)"
         fi
         printf '%s\n' "$line" | sed -E 's/"#.{6}"/"'"$repl"'"/' >> "$tag_colors_file"
@@ -232,7 +236,7 @@ filter_on_field() {
         h
         # Fields are separated by tabs, so skip field number of tabs to get to
         # the right field we want to test
-        s/^([^\t]*\t){'"$field"'}([^\t]*)\t.*/\2/g
+        s/^([^\t]*\t){'"$((field - 1))"'}([^\t]*)\t.*/\2/g
         # Delete the line if the pattern (case-insensitive) does not match
         /'"$filter"'/I !d
         # Get the whole line back from the hold space and print it
@@ -264,13 +268,19 @@ generate_index_view() {
 }
 
 
-show_index_view() {
+show_view() {
+    _mode="$1"
+    _filename="$2"
     termwidth="$(tput cols)"
     hr="$(printf "%${termwidth}s" | sed 's/ /─/g')"
     awk -F"$sep" -v full_hr="$hr" -v termwidth="$termwidth" \
         -v color_mode="$colormode" \
-        -v view_mode='index' \
-        -f formatoutput.awk "$visible_entries_file"
+        -v view_mode="$_mode" \
+        -f 'formatoutput.awk' "$_filename"
+}
+
+show_index_view() {
+    show_view 'index' "$visible_entries_file"
 }
 
 
@@ -286,7 +296,7 @@ while test "$1"; do
             colormode="truecolor";
             ;;
         -q )
-            quiet='yes'
+            view_mode=''
             ;;
         -r | --reload )
             reload_entries='yes'
@@ -299,7 +309,8 @@ while test "$1"; do
                 #| awk -F"$sep" '{split($1,t,",");split($2,c,",");for(x in t){print c[x] "\t" t[x]}}'\
                 #| sort -t"$sep" -k2 | uniq -c -f1 | sort -nr | column
                 #| sed -E 's/,([0-9 ]+) ([0-9;]+)\t([^,]+)/\1 [38;2;0;0;0;48;2;\2m \3 [0m/g'
-            quiet='yes'
+            # TODO: taglist viewmode
+            view_mode=''
             ;;
         -b[0-9]* )
             entry_num="${1#-b}"
@@ -319,9 +330,9 @@ while test "$1"; do
                         -v view_mode='backstory' \
                         -f formatoutput.awk
             else
+                view_mode=''
                 printf 'No backstory files\n'
             fi
-            quiet='yes'
             ;;
         -s )
             # Show current sort key
@@ -336,7 +347,7 @@ while test "$1"; do
                 fatal_error "invalid sort key: $sort_key"
             fi
             printf 'current sort key: %s\n' "$sort_key_name"
-            quiet='yes'
+            view_mode=''
             ;;
         -s? | -s?- )
             # Sort
@@ -355,7 +366,8 @@ while test "$1"; do
         -f )
             printf 'Active filters:\n  title: %s\n  desc: %s\n  tags: %s\n  wordcount: %s\n' \
                 "$filter_title" "$filter_desc" "$filter_tags" "$filter_wordcount"
-            quiet='yes'
+            # TODO: maybe active filter view mode?
+            view_mode=''
             ;;
         -f0 )
             # Reset all filters
@@ -464,7 +476,7 @@ while test "$1"; do
                     >> "$undo_file"
                 reload_entries='yes'
             fi
-            quiet='yes'
+            view_mode=''
             ;;
         * )
             fatal_error "invalid argument: $1"
@@ -473,7 +485,7 @@ while test "$1"; do
     shift
 done
 
-if test -z "$quiet" ; then
+if test "$view_mode" = "$index_view" ; then
     if test -n "$reload_entries" || test ! -f "$entries_file" ; then
         index_metadata_files
         regen_entries='yes'
