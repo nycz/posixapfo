@@ -39,6 +39,7 @@ BEGIN {
     TITLE = "title";
     TAG = "tag";
     DESC = "desc";
+    REV = "revision";
     HR = "hr";
     # Mode: True color
     fmt[BG TC] = "[39;22;23;48;2;34;51;51m";
@@ -46,6 +47,7 @@ BEGIN {
     fmt[TITLE TC] = "[23;38;2;204;221;221;1m";
     fmt[TAG TC] = "[22;23;38;2;0;17;17;48;2;";
     fmt[DESC TC] = "[22;23;38;2;136;153;153m";
+    fmt[REV TC] = "[22;23;38;2;106;185;201m";
     fmt[HR TC] = "[22;23;38;2;0;0;0m";
     # Mode: Color (8/16)
     fmt[BG COLOR] = "[0m";
@@ -53,6 +55,7 @@ BEGIN {
     fmt[TITLE COLOR] = "[0;1m";
     fmt[TAG COLOR] = "[0;30;46m";
     fmt[DESC COLOR] = "[0m";
+    fmt[REV COLOR] = "[0m";
     fmt[HR COLOR] = "[0;90m";
     # Mode: Monochrome
     fmt[BG MONO] = "[0m";
@@ -60,6 +63,7 @@ BEGIN {
     fmt[TITLE MONO] = "[1m";
     fmt[TAG MONO] = "[0;7m";
     fmt[DESC MONO] = "";
+    fmt[REV MONO] = "";
     fmt[HR MONO] = "";
     # Misc formatting
     if (!full_hr) {
@@ -142,8 +146,18 @@ function index_view() {
     }
 }
 function backstory_view() {
-    title=$1;
-    printf("%s %s%d  %s%s[K\n", fmt[BG color_mode], fmt[NUM color_mode], entry_index, fmt[TITLE color_mode], title);
+    filename = $1;
+    title = $2;
+    revision = $3;
+    metaline_wordcount = $4;
+    wordcount = $5 - metaline_wordcount;
+    printf("%s %s%d  %s%s", fmt[BG color_mode], fmt[NUM color_mode],
+           entry_index, fmt[TITLE color_mode], title);
+    printf("%s (%d)", fmt[NUM color_mode], wordcount);
+    if (revision > 0) {
+        printf(" %s[rev. %d]", fmt[REV color_mode], revision);
+    }
+    printf("%s[K\n", fmt[BG color_mode]);
 }
 {
     if (entry_index == 0) {

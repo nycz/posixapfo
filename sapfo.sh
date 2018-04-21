@@ -37,6 +37,10 @@ Actions:
   -lt                     list all tags
   -e<NUM>                 edit the entry with index <NUM>
 
+Backstory:
+  -b                      show backstory pages of last chosen entry
+  -b<NUM>                 show backstory pages of the entry with index <NUM>
+
 Sorting:
   -s                      print active sort key
   -sn, -sn-               sort on name (append - for reverse)
@@ -112,6 +116,7 @@ undo_file="$cache_dir/undo"
 entries_file="$cache_dir/entries"
 visible_entries_file="$cache_dir/visible_entries"
 tag_colors_file="$cache_dir/fixedtagcolors.json"
+active_backstory_file="$cache_dir/backstory_pages"
 
 # Fields
 field_metadata_fname=1
@@ -168,7 +173,7 @@ view_mode="$index_view"
 tab='	'  # tab character, since bash and its ilk dont like \t
 sep="$tab"
 regen_entries=''
-
+regen_backstory=''
 
 fix_tag_colors() {
     printf '' > "$tag_colors_file"
@@ -267,6 +272,22 @@ generate_index_view() {
         > "$visible_entries_file"
 }
 
+generate_backstory_view() {
+    backstory_pages_file="$cache_dir/.temp-backstory-files"
+    backstory_wordcount_file="$cache_dir/.temp-backstory-wordcount"
+    # Find relevant filenames
+    find "$metadir" -type f \! -regex '.*\.rev[0-9]+' > "$backstory_pages_file"
+    # Wordcounts for each backstory page
+    xargs -d'\n' wc -w < "$backstory_pages_file" | head -n-1 \
+        | sed 's/^ *\([0-9]\+\) \+.*$/\1/' > "$backstory_wordcount_file"
+    # Json metadata for each backstory page
+    xargs -d'\n' head -qn1 < "$backstory_pages_file"\
+        | awk '{printf("{\"__metawordcount\": \"%d\", %s\n", NF, substr($0, 2))}' \
+        | jq -r --arg sep "$sep" \
+            '[.title, .revision, .__metawordcount] | map(tostring) | join($sep)'\
+        | paste "$backstory_pages_file" - "$backstory_wordcount_file"\
+        | sort -t"$sep" -k2 > "$active_backstory_file"
+}
 
 show_view() {
     _mode="$1"
@@ -283,6 +304,9 @@ show_index_view() {
     show_view 'index' "$visible_entries_file"
 }
 
+show_backstory_view() {
+    show_view 'backstory' "$active_backstory_file"
+}
 
 while test "$1"; do
     case "$1" in
@@ -312,6 +336,9 @@ while test "$1"; do
             # TODO: taglist viewmode
             view_mode=''
             ;;
+        -b )
+            view_mode="$backstory_view"
+            ;;
         -b[0-9]* )
             entry_num="${1#-b}"
             printf '%s\n' "$entry_num" | grep -qE '^[0-9]$' || fatal_error "entry index is not a number: $entry_num"
@@ -324,11 +351,8 @@ while test "$1"; do
             termwidth="$(tput cols)"
             hr="$(printf "%${termwidth}s" | sed 's/ /─/g')"
             if test -d "$metadir" ; then
-                ls "$metadir" \
-                    | awk -F"$sep" -v full_hr="$hr" -v termwidth="$termwidth" \
-                        -v color_mode="$colormode" \
-                        -v view_mode='backstory' \
-                        -f formatoutput.awk
+                view_mode="$backstory_view"
+                regen_backstory='yes'
             else
                 view_mode=''
                 printf 'No backstory files\n'
@@ -494,6 +518,11 @@ if test "$view_mode" = "$index_view" ; then
         generate_index_view
     fi
     show_index_view
+elif test "$view_mode" = "$backstory_view" ; then
+    if test -n "$regen_backstory" ; then
+        generate_backstory_view
+    fi
+    show_backstory_view
 fi
 
 # Save state
