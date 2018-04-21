@@ -214,7 +214,7 @@ index_metadata_files() {
             ] | join("\t")' \
         < "$METADATA_FNAMES_FILE" \
         | paste "$METADATA_FNAMES_FILE" "$METADATA_MODIFYDATES_FILE" \
-            "$MODIFYDATES_FILE" - "$WORDCOUNTS_FILE" \
+                "$MODIFYDATES_FILE" - "$WORDCOUNTS_FILE" \
         > "$ENTRIES_FILE"
 }
 
@@ -263,6 +263,7 @@ show_index_view() {
     hr="$(printf "%${TERMWIDTH}s" | sed 's/ /─/g')"
     awk -F"${SEP?"no separator"}" -v full_hr="$hr" -v termwidth="$TERMWIDTH" \
         -v color_mode="${COLORMODE?"no color mode"}" \
+        -v view_mode='index' \
         -f formatoutput.awk "${VISIBLE_ENTRIES_FILE?"no visible entries file"}"
 }
 
@@ -292,6 +293,29 @@ while test "$1"; do
                 #| awk -F"$SEP" '{split($1,t,",");split($2,c,",");for(x in t){print c[x] "\t" t[x]}}'\
                 #| sort -t"$SEP" -k2 | uniq -c -f1 | sort -nr | column
                 #| sed -E 's/,([0-9 ]+) ([0-9;]+)\t([^,]+)/\1 [38;2;0;0;0;48;2;\2m \3 [0m/g'
+            QUIET='yes'
+            ;;
+        -b[0-9]* )
+            ENTRY_NUM="${1#-b}"
+            printf '%s\n' "$ENTRY_NUM" | grep -qE '^[0-9]$' || fatal_error "entry index is not a number: $ENTRY_NUM"
+            # Get the entry data from the visible entries cache
+            ENTRY="$(sed -n "$((ENTRY_NUM + 1)) p" "$VISIBLE_ENTRIES_FILE")"
+            test -z "$ENTRY" && fatal_error "invalid entry index: $ENTRY_NUM"
+            ENTRY_FNAME="$(printf '%s\n' "$ENTRY" | cut -d"$SEP" -f"$FIELD_METADATA_FNAME"\
+                           | sed 's_/\.\([^/]\+\)\.metadata$_/\1_')"
+            METADIR="${ENTRY_FNAME}.metadir"
+            TERMWIDTH="$(tput cols)"
+            hr="$(printf "%${TERMWIDTH}s" | sed 's/ /─/g')"
+            if test -d "$METADIR" ; then
+                find "$METADIR" -type f ;
+                ls "$METADIR" \
+                    | awk -F"${SEP?"no separator"}" -v full_hr="$hr" -v termwidth="$TERMWIDTH" \
+                        -v color_mode="${COLORMODE?"no color mode"}" \
+                        -v view_mode='backstory' \
+                        -f formatoutput.awk
+            else
+                printf 'No backstory files\n'
+            fi
             QUIET='yes'
             ;;
         -s )

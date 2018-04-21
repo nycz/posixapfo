@@ -1,6 +1,7 @@
 #!/bin/awk -f
 #
 # Inputs: (provide with -v)
+#   view_mode - index/backstory
 #   full_hr - a string to be used as horizontal line between entries
 #   termwidth - the width of the terminal
 #   color_mode - truecolor/color/mono
@@ -61,7 +62,11 @@ BEGIN {
     fmt[DESC MONO] = "";
     fmt[HR MONO] = "";
     # Misc formatting
-    hr = substr(full_hr, 5);
+    if (!full_hr) {
+        hr = "-";
+    } else {
+        hr = substr(full_hr, 5);
+    }
     fmt_reset = "[0m";
     # Init stuff
     if (!color_mode) {
@@ -97,17 +102,12 @@ function wrap(text, rel_pos, pos, wrapped_text) {
     }
     return wrapped_text
 }
-{
+function index_view() {
     title=$4;
     description=$5;
     wordcount=$8;
     tag_count = split($6, tags, ",");
     split($7, tag_colors, ",");
-    if (entry_index == 0) {
-        print fmt[BG color_mode]"[K";
-    } else {
-        printf("%s%s  %s[K\n", fmt[BG color_mode], fmt[HR color_mode], hr);
-    }
     # Top row, title part
     printf("%s %s%d  %s%s", fmt[BG color_mode], fmt[NUM color_mode], entry_index, fmt[TITLE color_mode], title);
     if (length(entry_index) + length(title) + length(wordcount) + 5 > termwidth - 2) {
@@ -139,6 +139,24 @@ function wrap(text, rel_pos, pos, wrapped_text) {
     split(wrap(description, 0, 0, ""), description_rows, "\n");
     for (j in description_rows) {
         printf("  %s%s%s[K\n", fmt[DESC color_mode], description_rows[j], fmt[BG color_mode]);
+    }
+}
+function backstory_view() {
+    title=$1;
+    printf("%s %s%d  %s%s[K\n", fmt[BG color_mode], fmt[NUM color_mode], entry_index, fmt[TITLE color_mode], title);
+}
+{
+    if (entry_index == 0) {
+        print fmt[BG color_mode]"[K";
+    } else {
+        printf("%s%s  %s[K\n", fmt[BG color_mode], fmt[HR color_mode], hr);
+    }
+    if (view_mode == "index") {
+        index_view();
+    } else if (view_mode == "backstory") {
+        backstory_view();
+    } else {
+        print "##INVALID VIEW MODE##\n" >> "/dev/stderr";
     }
     entry_index++;
 }
