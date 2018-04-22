@@ -134,16 +134,16 @@ def_desc_filter='.*'
 def_tag_filter=''
 def_wordcount_filter='>=0'
 def_sort_key="$field_title"
-def_sort_order="ascending"
-test -f "$state_file" \
-    || printf '%s=%s\n%s=%s\n%s=%s\n%s=%s\n%s=%s\n' \
-        'title_filter' "$def_title_filter" \
-        'desc_filter' "$def_desc_filter" \
-        'tag_filter' "$def_tag_filter" \
-        'wordcount_filter' "$def_wordcount_filter" \
-        'sort_key' "$def_sort_key" \
-        'sort_order' "$def_sort_order" \
-        > "$state_file"
+def_sort_order='ascending'
+test ! -f "$state_file" \
+    && {
+        printf 'title_filter=%s\n' "$def_title_filter"
+        printf 'desc_filter=%s\n' "$def_desc_filter"
+        printf 'tag_filter=%s\n' "$def_tag_filter"
+        printf 'wordcount_filter=%s\n' "$def_wordcount_filter"
+        printf 'sort_key=%s\n' "$def_sort_key"
+        printf 'sort_order=%s\n' "$def_sort_order"
+    } > "$state_file"
 
 # Filters
 get_state_value() {
