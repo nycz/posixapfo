@@ -499,17 +499,15 @@ while test "$1"; do
             ;;
         -e[0-9]* )
             test -z "$EDITOR" && fatal_error 'no EDITOR environment variable specified'
-            entry_num="${1#-e}"
-            printf '%s\n' "$entry_num" | grep -qE '^[0-9]$' || fatal_error "entry index is not a number: $entry_num"
-            # Get the entry data from the visible entries cache
-            entry="$(sed -n "$((entry_num + 1)) p" "$visible_entries_file")"
-            test -z "$entry" && fatal_error "invalid entry index: $entry_num"
-            entry_fname="$(printf '%s\n' "$entry" | cut -d"$sep" -f"$field_metadata_fname")"
+            entry="$(parse_entry_number "${1#-e}")"
+            exit_on_error
+            entry_metadata_fname="$(printf '%s\n' "$entry"\
+                | cut -d"$sep" -f"$field_metadata_fname")"
             # Prepare undo
-            old_checksum="$(cksum "$entry_fname")"
-            old_data="$(jq -c '.' "$entry_fname")"
-            "$EDITOR" "$entry_fname"
-            new_checksum="$(cksum "$entry_fname")"
+            old_checksum="$(cksum "$entry_metadata_fname")"
+            old_data="$(jq -c '.' "$entry_metadata_fname")"
+            "$EDITOR" "$entry_metadata_fname"
+            new_checksum="$(cksum "$entry_metadata_fname")"
             if test "$old_checksum" = "$new_checksum" ; then
                 printf 'no changes were made\n'
             else
