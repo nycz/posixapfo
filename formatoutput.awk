@@ -5,6 +5,7 @@
 #   full_hr - a string to be used as horizontal line between entries
 #   termwidth - the width of the terminal
 #   color_mode - truecolor/color/mono
+#   header - (optional) text to be printed above the first entry
 #
 # stdin should be a list of tab-seperated values, see the main part
 # of this program for details on individual values
@@ -35,6 +36,7 @@ BEGIN {
     MONO = "mono";
     # Color targets
     BG = "background";
+    HEADER = "header";
     NUM = "number";
     TITLE = "title";
     TAG = "tag";
@@ -49,22 +51,28 @@ BEGIN {
     fmt[DESC TC] = "[22;23;38;2;136;153;153m";
     fmt[REV TC] = "[22;23;38;2;106;185;201m";
     fmt[HR TC] = "[22;23;38;2;0;0;0m";
+    fmt[HEADER TC] = "[23;38;2;204;221;221;1m";
+    fmt[HEADERLINE TC] = "[23;38;2;80;165;190;1m";
     # Mode: Color (8/16)
     fmt[BG COLOR] = "[0m";
+    fmt[HEADER COLOR] = "[0;1m";
     fmt[NUM COLOR] = "[0m";
     fmt[TITLE COLOR] = "[0;1m";
     fmt[TAG COLOR] = "[0;30;46m";
     fmt[DESC COLOR] = "[0m";
     fmt[REV COLOR] = "[0m";
     fmt[HR COLOR] = "[0;90m";
+    fmt[HEADERLINE COLOR] = "[0m";
     # Mode: Monochrome
     fmt[BG MONO] = "[0m";
     fmt[NUM MONO] = "[0m";
+    fmt[HEADER MONO] = "[1m";
     fmt[TITLE MONO] = "[1m";
     fmt[TAG MONO] = "[0;7m";
     fmt[DESC MONO] = "";
     fmt[REV MONO] = "";
     fmt[HR MONO] = "";
+    fmt[HEADERLINE MONO] = "";
     # Misc formatting
     if (!full_hr) {
         hr = "-";
@@ -127,7 +135,7 @@ function index_view() {
         tag_width = length(tags[j]) + 2;
         if (x > 0 && x + tag_width > termwidth - 2) {
             x = 0;
-            printf fmt[BG color_mode]"[K\n ";
+            printf("%s[K\n", fmt[BG color_mode]);
         }
         if (color_mode == TC) {
             tag_color = tag_colors[j] "m";
@@ -146,6 +154,15 @@ function index_view() {
     }
 }
 function backstory_view() {
+    if (entry_index == 0 && header) {
+        _header_prefix = "Backstory pages for: "
+        printf("  %s%s[3m%s[K\n  %s", fmt[HEADER color_mode],
+               _header_prefix, header, fmt[HEADERLINE color_mode]);
+        for (ii=0; ii<length(header)+length(_header_prefix); ii++) {
+            printf("▔");
+        }
+        printf("[K\n");
+    }
     filename = $1;
     title = $2;
     revision = $3;

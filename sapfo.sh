@@ -303,9 +303,11 @@ generate_backstory_view() {
 show_view() {
     _mode="$1"
     _filename="$2"
+    _header="$3"
     termwidth="$(tput cols)"
     hr="$(printf "%${termwidth}s" | sed 's/ /─/g')"
     awk -F"$sep" -v full_hr="$hr" -v termwidth="$termwidth" \
+        -v header="$_header" \
         -v color_mode="$colormode" \
         -v view_mode="$_mode" \
         -f 'formatoutput.awk' "$_filename"
@@ -316,7 +318,11 @@ show_index_view() {
 }
 
 show_backstory_view() {
-    show_view 'backstory' "$active_backstory_file"
+    _entry_base_dir="${active_backstory_dir%/*}"
+    _entry_base_name="${active_backstory_dir##*/}"
+    _entry_full_name="${_entry_base_dir}/.${_entry_base_name%.metadir}.metadata"
+    _entry_title="$(jq '.title' "$_entry_full_name")"
+    show_view 'backstory' "$active_backstory_file" "$_entry_title"
 }
 
 parse_entry_number() {
@@ -555,3 +561,4 @@ set_state_value 'tag_filter' "$filter_tags"
 set_state_value 'wordcount_filter' "$filter_wordcount"
 set_state_value 'sort_key' "$sort_key"
 set_state_value 'sort_order' "$sort_order"
+set_state_value 'active_backstory_dir' "$active_backstory_dir"
