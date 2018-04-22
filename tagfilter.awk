@@ -3,12 +3,10 @@
 # Inputs: (provide with -v)
 #   tag_filter - sanitized tag filter with no SPAAAACE around (),|
 #
-# stdin should be a list of tab-seperated values, see the main part
+# stdin should be a list of tab-separated values, see the main part
 # of this program for details on individual values
 #
 BEGIN {
-    # Init stuff
-    split(tag_filter, tag_filter_array, ",");
     # Init tag macros
     split(raw_tag_macros, tag_macro_array, "\n");
     for (tag_macro_array_i in tag_macro_array) {
@@ -18,6 +16,7 @@ BEGIN {
     # Generate the tokens
     tag_token_count = tokenize(tag_filter, tag_tokens,   "", "", 0, 0);
 }
+
 function tokenize(text, tokens,    char, buf, pos, depth) {
     buf = "";
     tokens[1] = " ";
@@ -109,13 +108,46 @@ function tokenize(text, tokens,    char, buf, pos, depth) {
     }
     return pos-1
 }
+
+function default_result(token) {
+    # Set default result, 1 for AND and 0 for OR
+    if (token == "," || token == " ") {
+        return 1;
+    } else if (token == "|") {
+        return 0
+    } else {
+        printf("Error 1: invalid mode: '%s'\n", token) > "/dev/stderr";
+        exit 5;
+    }
+}
+
 function match_tags(tokens, token_count, tags_, pos, depth) {
     depth = 1
     inverse_stack[depth] = 0;
     mode_stack[depth] = tokens[1];
-    result_stack[depth] = 1;
+    result_stack[depth] = default_result(tokens[1]);
     pos = 2;
     for (pos = 2; pos <= token_count; pos++) {
+        if (debug_trace == "true") {
+            printf("[TRACE START] pos='%s', depth='%s'\n", pos, depth);
+            print "[MODESTACK DUMP START]"
+            for (ii in mode_stack) {
+                printf("key='%s', value='%s'\n", ii, mode_stack[ii]);
+            }
+            print "[MODESTACK DUMP END]"
+            print "[INVERSESTACK DUMP START]"
+            for (ii in inverse_stack) {
+                printf("key='%s', value='%s'\n", ii, inverse_stack[ii]);
+            }
+            print "[INVERSESTACK DUMP END]"
+            print "[RESULTSTACK DUMP START]"
+            for (ii in result_stack) {
+                printf("key='%s', value='%s'\n", ii, result_stack[ii]);
+            }
+            print "[RESULTSTACK DUMP END]"
+            print "[TRACE END]"
+            print ""
+        }
         if (tokens[pos] == "(" || tokens[pos] == "-") {
             if (tokens[pos] == "-") {
                 set_inverse = 1;
@@ -128,15 +160,7 @@ function match_tags(tokens, token_count, tags_, pos, depth) {
             depth++;
             pos++;
             mode_stack[depth] = tokens[pos];
-            # Set default result, 1 for AND and 0 for OR
-            if (tokens[pos] == "," || tokens[pos] == " ") {
-                result_stack[depth] = 1;
-            } else if (tokens[pos] == "|") {
-                result_stack[depth] = 0;
-            } else {
-                printf("Error 1: invalid mode: '%s'\n", tokens[pos]) > "/dev/stderr";
-                exit 5;
-            }
+            result_stack[depth] = default_result(tokens[pos])
             inverse_stack[depth] = inverse_stack[depth-1];
             if (set_inverse) {
                 inverse_stack[depth] = !inverse_stack[depth];

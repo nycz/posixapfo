@@ -188,7 +188,7 @@ regen_backstory=''
 fix_tag_colors() {
     printf '' > "$tag_colors_file"
     #jq -r 'to_entries | map("\(.key)\t\(.value)") | join("\n")' tagcolors.json \
-    jq '.["tag colors"]' "$settings_file" \
+    jq '.["tag colors"]//{}' "$settings_file" \
       | sed -E 's/"#(.)(.)(.)"/"#\1\1\2\2\3\3"/' \
       | while read -r line ; do
         rgb=$(printf '%s\n' "$line" | sed -En 's/^.*": *"#(..)(..)(..)".*$/0x\1 0x\2 0x\3/p' )
@@ -262,7 +262,7 @@ generate_index_view() {
     # Fix tag filter string (aka get rid of them)
     ftfs='s/ *([(),|]) */\1/g'
     # Extract the tag macros from the settings file
-    get_tag_macros='.["tag macros"]|to_entries|map("\(.key)\t\(.value)")|join("\n")'
+    get_tag_macros='.["tag macros"]//[]|to_entries|map("\(.key)\t\(.value)")|join("\n")'
     # Reverse order if descending
     reverse_arg=''
     test "$sort_order" = 'descending' && reverse_arg='-r'
