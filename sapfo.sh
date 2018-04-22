@@ -43,6 +43,7 @@ Running without any arguments shows the currently visible entries
 Actions:
   -lt                     list all tags
   -e<NUM>                 edit the entry with index <NUM>
+  -eb<NUM>                edit the backstory page with index <NUM>
 
 Backstory:
   -b                      show backstory pages of last chosen entry
@@ -529,6 +530,37 @@ while test "$1"; do
                     >> "$undo_file"
                 reload_entries='yes'
             fi
+            view_mode=''
+            ;;
+        -eb[0-9]* )
+            test -z "$EDITOR" && fatal_error 'no EDITOR environment variable specified'
+            _page_num="${1#-eb}"
+            # The number has to actually be a number
+            case "$_page_num" in
+                ''|*[!0-9]*) fatal_error "page index is not a number: $_page_num" ;;
+            esac
+            # Get the entry data from the backstory pages cache
+            _page="$(sed -n "$((_entry_num + 1)) p" "$active_backstory_file")"
+            test -z "$_page" && fatal_error "invalid page index: $_page_num"
+            _page_file="$(printf '%s\n' "$_page" | cut -d"$sep" -f1)"
+            # Copy stuff to edit (aka not metadata)
+            _temp_file="$(mktemp '/tmp/sapfo-backstory-page.XXXXXX')"
+            tail -n+2 "$_page_file" > "$_temp_file"
+            "$EDITOR" "$_temp_file"
+            head -1 "$_page_file" | cat - "$_temp_file" | cmp -s - "$_page_file"
+            case "$?" in
+                1)
+                    _other_temp_file="$(mktemp '/tmp/sapfo-copy-buffer.XXXXXX')"
+                    head -1 "$_page_file" | cat - "$_temp_file" > "$_other_temp_file"
+                    cp "$_other_temp_file" "$_page_file"
+                    rm "$_other_temp_file"
+                    ;;
+                2)
+                    exit 2
+                    ;;
+            esac
+            rm "$_temp_file"
+            regen_backstory='yes'
             view_mode=''
             ;;
         * )
