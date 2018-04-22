@@ -8,9 +8,9 @@ fatal_error() {
     # $1 = message, $2 = exit code (optional)
     error_prefix='Error: '
     if test "$colormode" = 'mono' ; then
-        printf '%s%s\n' "$error_prefix" "$1"
+        printf '%s%s\n' "$error_prefix" "$1" >&2
     else
-        printf '%s%s%s%s\n' '[1;31m' "$error_prefix" '[0m' "$1"
+        printf '%s%s%s%s\n' '[1;31m' "$error_prefix" '[0m' "$1" >&2
     fi
     exit "${2-1}"  # default to exit code 1
 }
