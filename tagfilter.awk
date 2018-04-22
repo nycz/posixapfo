@@ -206,6 +206,15 @@ function match_tags(tokens, token_count, tags_, pos, depth) {
     return result_stack[1];
 }
 {
+    if (debug_trace == "true") {
+        printf("0: %s\n", $0);
+        printf("1: %s\n", $1);
+        printf("2: %s\n", $2);
+        printf("3: %s\n", $3);
+        printf("4: %s\n", $4);
+        printf("5: %s\n", $5);
+        printf("6: %s\n", $6);
+    }
     tag_count = split($6, tags, ",");
     if (match_tags(tag_tokens, tag_token_count, tags, 0, 0)) {
         print $0;
