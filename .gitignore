@@ -1,2 +1,3 @@
 *.json
 dump/*
+test_data/cache/*
