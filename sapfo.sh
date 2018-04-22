@@ -16,6 +16,13 @@ fatal_error() {
 }
 
 
+exit_on_error() {
+    # Helper function for when fatal_error has been run in a subshell
+    _exit_code="$?"
+    test "$_exit_code" -eq "0" || exit "$_exit_code"
+}
+
+
 show_help() {
     scriptname="$(basename "$0")"
     printf '%s' \
@@ -135,6 +142,7 @@ def_tag_filter=''
 def_wordcount_filter='>=0'
 def_sort_key="$field_title"
 def_sort_order='ascending'
+def_active_backstory_dir=''
 test ! -f "$state_file" \
     && {
         printf 'title_filter=%s\n' "$def_title_filter"
@@ -143,6 +151,7 @@ test ! -f "$state_file" \
         printf 'wordcount_filter=%s\n' "$def_wordcount_filter"
         printf 'sort_key=%s\n' "$def_sort_key"
         printf 'sort_order=%s\n' "$def_sort_order"
+        printf 'active_backstory_dir=%s\n' "$def_active_backstory_dir"
     } > "$state_file"
 
 # Filters
@@ -163,6 +172,7 @@ filter_tags="$(get_state_value 'tag_filter' "$def_tag_filter")"
 filter_wordcount="$(get_state_value 'wordcount_filter' "$def_wordcount_filter")"
 sort_key="$(get_state_value 'sort_key' "$def_sort_key")"
 sort_order="$(get_state_value 'sort_order' "$def_sort_order")"
+active_backstory_dir="$(get_state_value 'active_backstory_dir' "$def_active_backstory_dir")"
 
 # View modes
 index_view='index'
@@ -273,10 +283,11 @@ generate_index_view() {
 }
 
 generate_backstory_view() {
+    test -z "$active_backstory_dir" && fatal_error 'no entry selected'
     backstory_pages_file="$cache_dir/.temp-backstory-files"
     backstory_wordcount_file="$cache_dir/.temp-backstory-wordcount"
     # Find relevant filenames
-    find "$metadir" -type f \! -regex '.*\.rev[0-9]+' > "$backstory_pages_file"
+    find "$active_backstory_dir" -type f \! -regex '.*\.rev[0-9]+' > "$backstory_pages_file"
     # Wordcounts for each backstory page
     xargs -d'\n' wc -w < "$backstory_pages_file" | head -n-1 \
         | sed 's/^ *\([0-9]\+\) \+.*$/\1/' > "$backstory_wordcount_file"
@@ -308,6 +319,18 @@ show_backstory_view() {
     show_view 'backstory' "$active_backstory_file"
 }
 
+parse_entry_number() {
+    _entry_num="$1"
+    # The number has to actually be a number
+    case "$_entry_num" in
+        ''|*[!0-9]*) fatal_error "entry index is not a number: $_entry_num" ;;
+    esac
+    # Get the entry data from the visible entries cache
+    _entry="$(sed -n "$((_entry_num + 1)) p" "$visible_entries_file")"
+    test -z "$_entry" && fatal_error "invalid entry index: $_entry_num"
+    printf '%s\n' "$_entry"
+}
+
 while test "$1"; do
     case "$1" in
         --mono )
@@ -337,21 +360,23 @@ while test "$1"; do
             view_mode=''
             ;;
         -b )
+            if test ! -f "$active_backstory_file" ; then
+                printf 'No entry selected to view backstory for\n'
+                exit 0
+            fi
             view_mode="$backstory_view"
             ;;
         -b[0-9]* )
-            entry_num="${1#-b}"
-            printf '%s\n' "$entry_num" | grep -qE '^[0-9]$' || fatal_error "entry index is not a number: $entry_num"
-            # Get the entry data from the visible entries cache
-            entry="$(sed -n "$((entry_num + 1)) p" "$visible_entries_file")"
-            test -z "$entry" && fatal_error "invalid entry index: $entry_num"
-            entry_fname="$(printf '%s\n' "$entry" | cut -d"$sep" -f"$field_metadata_fname"\
-                           | sed 's_/\.\([^/]\+\)\.metadata$_/\1_')"
+            entry="$(parse_entry_number "${1#-b}")"
+            exit_on_error
+            # shellcheck disable=SC2016
+            entry_fname="$(printf '%s\n' "$entry"\
+                | cut -d"$sep" -f"$field_metadata_fname"\
+                | sed 's_/\.\([^/]\+\)\.metadata$_/\1_')"
             metadir="${entry_fname}.metadir"
-            termwidth="$(tput cols)"
-            hr="$(printf "%${termwidth}s" | sed 's/ /─/g')"
             if test -d "$metadir" ; then
                 view_mode="$backstory_view"
+                active_backstory_dir="$metadir"
                 regen_backstory='yes'
             else
                 view_mode=''
