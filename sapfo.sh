@@ -1,6 +1,7 @@
 #!/bin/sh
 default_settings_file="$HOME/.config/sapfo/settings.json"
 default_cache_dir="$HOME/.cache/sapfo"
+local_dir="$(readlink "$0")"
 settings_file=''
 
 
@@ -274,7 +275,7 @@ generate_index_view() {
     awk -F"$sep" -v tag_filter="$(printf '%s\n' "$filter_tags" | sed -E "$ftfs")" \
         -v raw_tag_macros="$(jq -r "$get_tag_macros" "$settings_file" \
                              | sed -E "$ftfs")" \
-        -f tagfilter.awk "$entries_file" \
+        -f "${local_dir%/*}/tagfilter.awk" "$entries_file" \
         | filter_on_field "$field_title" "$filter_title" \
         | filter_on_field "$field_desc" "$filter_desc" \
         | awk -F"$sep" \
@@ -311,7 +312,7 @@ show_view() {
         -v header="$_header" \
         -v color_mode="$colormode" \
         -v view_mode="$_mode" \
-        -f 'formatoutput.awk' "$_filename"
+        -f "${local_dir%/*}/formatoutput.awk" "$_filename"
 }
 
 show_index_view() {
